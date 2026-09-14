@@ -4,8 +4,8 @@ import { getActiveStorePath } from "./connection.js";
 import { DEFAULT_SETTINGS } from "../config/defaults.js";
 
 const SNAPSHOT_NAME = "admin-state.json";
-/** Bump this to ignore leftover catalog snapshots from before the empty-store reset. */
-export const CATALOG_GENERATION = 3;
+/** Bump this to ignore leftover catalog snapshots. Services are never restored. */
+export const CATALOG_GENERATION = 4;
 
 let source = null;
 let persistDisabled = 0;
@@ -42,7 +42,8 @@ export function writeAdminSnapshot(state) {
     version: 1,
     generation: CATALOG_GENERATION,
     savedAt: new Date().toISOString(),
-    services: Array.isArray(state.services) ? state.services : [],
+    // Catalog lives in client/src/data/catalog.js — never persist services.
+    services: [],
     settings: state.settings && typeof state.settings === "object" ? state.settings : {},
   };
   const body = `${JSON.stringify(payload, null, 2)}\n`;
@@ -59,18 +60,8 @@ export function writeAdminSnapshot(state) {
 export function persistAdminState() {
   if (persistDisabled || !source) return null;
   try {
-    const services = source.listServices().map((service) => {
-      const rest = { ...service };
-      delete rest.imageSrc;
-      const blob = source.getServiceImageBlob?.(service.id);
-      if (!blob) return rest;
-      return {
-        ...rest,
-        imageBase64: Buffer.from(blob).toString("base64"),
-      };
-    });
     return writeAdminSnapshot({
-      services,
+      services: [],
       settings: source.getAllSettings(),
     });
   } catch (err) {
@@ -95,30 +86,6 @@ export function readAdminSnapshot() {
   return best;
 }
 
-function serviceSignature(service) {
-  return [
-    service.id,
-    Number(service.prices?.month),
-    Number(service.prices?.year),
-    String(service.nameEn || ""),
-    String(service.nameAr || ""),
-    String(service.descriptionEn || ""),
-    String(service.descriptionAr || ""),
-    service.outOfStock ? 1 : 0,
-  ].join("|");
-}
-
-function catalogSignature(services) {
-  return (services || [])
-    .map(serviceSignature)
-    .sort()
-    .join("\n");
-}
-
-function defaultCatalogSignature() {
-  return catalogSignature([]);
-}
-
 function settingsSignature(settings) {
   const value = settings || {};
   return JSON.stringify({
@@ -132,10 +99,6 @@ function settingsSignature(settings) {
   });
 }
 
-export function catalogMatchesDefaults(services) {
-  return catalogSignature(services) === defaultCatalogSignature();
-}
-
 export function settingsMatchDefaults(settings) {
   return settingsSignature(settings) === settingsSignature(DEFAULT_SETTINGS);
 }
@@ -145,25 +108,13 @@ export function hydratePersistedAdminState() {
   const snapshot = readAdminSnapshot();
   if (!snapshot) return { restored: false, reason: "no-snapshot" };
 
-  const currentServices = source.listServices();
   const currentSettings = source.getAllSettings();
-  const snapServices = Array.isArray(snapshot.services) ? snapshot.services : [];
   const snapSettings = snapshot.settings && typeof snapshot.settings === "object" ? snapshot.settings : null;
 
   let restoredServices = false;
   let restoredSettings = false;
 
   withoutPersist(() => {
-    if (snapServices.length && snapshot.generation === CATALOG_GENERATION) {
-      const empty = currentServices.length === 0;
-      const currentIsDefault = catalogMatchesDefaults(currentServices);
-      const snapshotDiffers = catalogSignature(currentServices) !== catalogSignature(snapServices);
-      if (empty || (currentIsDefault && snapshotDiffers)) {
-        source.replaceAllServices(snapServices);
-        restoredServices = true;
-      }
-    }
-
     if (snapSettings) {
       const emptySettings = source.countSettings() === 0;
       const currentIsDefault = settingsMatchDefaults(currentSettings);

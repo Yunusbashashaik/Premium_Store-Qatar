@@ -45,12 +45,33 @@ Price: ${priceAmount} QAR
 Please provide payment details and complete my order.`;
 }
 
-/** No bundled catalog. The public list is whatever Admin has saved via the API. */
+/**
+ * Storefront catalog — the only source of services.
+ *
+ * Add objects here (then put artwork in `client/public/services/`).
+ * These ship with the built site. They are not loaded from SQLite, admin
+ * snapshots, or browser cache, so they will not vanish or come back from
+ * leftover backups. To remove a service, delete its object from this array
+ * (and its image file).
+ *
+ * Example:
+ * {
+ *   id: "netflix",
+ *   nameEn: "Netflix",
+ *   nameAr: "نتفليكس",
+ *   descriptionEn: "English description",
+ *   descriptionAr: "الوصف بالعربية",
+ *   typeEn: "Shared / Private",
+ *   typeAr: "مشترك / خاص",
+ *   prices: { month: 25, year: 199 },
+ *   image: "services/netflix.jpg",
+ *   outOfStock: false,
+ * }
+ */
 export const SERVICES = [];
 
-export async function fetchServices() {
-  const { fetchPublicServices } = await import("../lib/adminApi.js");
-  return fetchPublicServices();
+export function fetchServices() {
+  return Promise.resolve(SERVICES.map((service) => ({ ...service })));
 }
 
 export function isOutOfStock(service) {
