@@ -335,7 +335,8 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-21.jpg"
   },
   {
     "id": "nordvpn",
@@ -350,7 +351,8 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-22.jpg"
   },
   {
     "id": "capcut-pro",
@@ -365,7 +367,8 @@ export const SERVICES = [
       "month": 15,
       "year": 100
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-23.jpg"
   },
   {
     "id": "peacock-premium",
@@ -380,7 +383,8 @@ export const SERVICES = [
       "month": 0,
       "year": 0
     },
-    "outOfStock": true
+    "outOfStock": true,
+    "image": "services/service-24.jpg"
   },
   {
     "id": "sony-liv",
@@ -395,7 +399,8 @@ export const SERVICES = [
       "month": 0,
       "year": 0
     },
-    "outOfStock": true
+    "outOfStock": true,
+    "image": "services/service-25.jpg"
   },
   {
     "id": "starzplay",
@@ -410,7 +415,8 @@ export const SERVICES = [
       "month": 0,
       "year": 0
     },
-    "outOfStock": true
+    "outOfStock": true,
+    "image": "services/service-26.jpg"
   },
   {
     "id": "surfshark-vpn",
@@ -425,7 +431,8 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-27.jpg"
   },
   {
     "id": "expressvpn",
@@ -440,7 +447,8 @@ export const SERVICES = [
       "month": 15,
       "year": 100
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-28.jpg"
   },
   {
     "id": "proton-vpn",
@@ -455,7 +463,8 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-29.jpg"
   },
   {
     "id": "apple-tv-plus",
@@ -470,7 +479,8 @@ export const SERVICES = [
       "month": 10,
       "year": 100
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-30.jpg"
   },
   {
     "id": "hbo-max",
@@ -485,7 +495,8 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-31.jpg"
   },
   {
     "id": "paramount-plus",
@@ -500,7 +511,8 @@ export const SERVICES = [
       "month": 0,
       "year": 0
     },
-    "outOfStock": true
+    "outOfStock": true,
+    "image": "services/service-32.jpg"
   },
   {
     "id": "shahid-vip",
@@ -515,7 +527,8 @@ export const SERVICES = [
       "month": 0,
       "year": 0
     },
-    "outOfStock": true
+    "outOfStock": true,
+    "image": "services/service-33.jpg"
   },
   {
     "id": "genspark-ai",
@@ -530,7 +543,8 @@ export const SERVICES = [
       "month": 200,
       "year": 1800
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-34.jpg"
   },
   {
     "id": "claude-ai",
@@ -545,7 +559,8 @@ export const SERVICES = [
       "month": 70,
       "year": 840
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-35.jpg"
   },
   {
     "id": "magic-light-ai",
@@ -560,7 +575,8 @@ export const SERVICES = [
       "month": 60,
       "year": 720
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-36.jpg"
   },
   {
     "id": "chaupal",
@@ -575,7 +591,8 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-37.jpg"
   },
   {
     "id": "tod-subscription",
@@ -590,7 +607,8 @@ export const SERVICES = [
       "month": 0,
       "year": 0
     },
-    "outOfStock": true
+    "outOfStock": true,
+    "image": "services/service-38.jpg"
   },
   {
     "id": "iptv-subscription",
@@ -605,7 +623,8 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-39.jpg"
   },
   {
     "id": "tiktok-usa",
@@ -620,7 +639,8 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-40.jpg"
   },
   {
     "id": "esim-travel",
