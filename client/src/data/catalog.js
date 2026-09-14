@@ -1,4 +1,7 @@
 import { DEFAULT_SETTINGS } from "./defaultSettings.js";
+import { SERVICES } from "./servicesCatalog.js";
+
+export { SERVICES };
 
 let supportNumbers = [...DEFAULT_SETTINGS.whatsappNumbers];
 let orderLineIndex = 0;
@@ -44,31 +47,6 @@ Price: ${priceAmount} QAR
 
 Please provide payment details and complete my order.`;
 }
-
-/**
- * Storefront catalog — the only source of services.
- *
- * Add objects here (then put artwork in `client/public/services/`).
- * These ship with the built site. They are not loaded from SQLite, admin
- * snapshots, or browser cache, so they will not vanish or come back from
- * leftover backups. To remove a service, delete its object from this array
- * (and its image file).
- *
- * Example:
- * {
- *   id: "netflix",
- *   nameEn: "Netflix",
- *   nameAr: "نتفليكس",
- *   descriptionEn: "English description",
- *   descriptionAr: "الوصف بالعربية",
- *   typeEn: "Shared / Private",
- *   typeAr: "مشترك / خاص",
- *   prices: { month: 25, year: 199 },
- *   image: "services/netflix.jpg",
- *   outOfStock: false,
- * }
- */
-export const SERVICES = [];
 
 export function fetchServices() {
   return Promise.resolve(SERVICES.map((service) => ({ ...service })));
