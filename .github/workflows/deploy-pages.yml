@@ -2,7 +2,7 @@ name: Deploy site on main
 
 # Single-branch deploy. Builds the client and commits the site to the repo root.
 # GitHub Pages should use: branch main · folder / (root)
-# https://yunusbashashaik.github.io/Social_OTT_Qatar/
+# https://yunusbashashaik.github.io/Premium_Store-Qatar/
 
 on:
   push:
@@ -37,7 +37,7 @@ jobs:
       - name: Build client
         run: npm run build -w client
         env:
-          VITE_BASE_PATH: /Social_OTT_Qatar/
+          VITE_BASE_PATH: /Premium_Store-Qatar/
 
       - name: Publish built site to repository root on main
         run: |

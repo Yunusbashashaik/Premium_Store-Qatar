@@ -2,9 +2,9 @@
 published: false
 ---
 
-# Social_OTT_Qatar
+# Premium Store Qatar
 
-> **Open the website (iPad / phone):** [https://yunusbashashaik.github.io/Social_OTT_Qatar/](https://yunusbashashaik.github.io/Social_OTT_Qatar/)  
+> **Open the website (iPad / phone):** [https://yunusbashashaik.github.io/Premium_Store-Qatar/](https://yunusbashashaik.github.io/Premium_Store-Qatar/)  
 > Do **not** use `yunusbashashaik.github.io` alone — that is not your store URL.
 
 Premium Store — bilingual digital subscription marketplace for Qatar (QAR).
@@ -106,11 +106,11 @@ Pushes to **`main`** build the site into the **repository root** on the same bra
 
 ### One-time setup (iPhone, iPad, or computer)
 
-1. Open **https://github.com/Yunusbashashaik/Social_OTT_Qatar/settings/pages**
+1. Open **https://github.com/Yunusbashashaik/Premium_Store-Qatar/settings/pages**
 2. Under **Build and deployment** → **Source**, choose **Deploy from a branch**
 3. **Branch:** `main` · **Folder:** `/ (root)` · **Save**
 4. Wait 1–2 minutes, then open on your iPad:
 
-   **https://yunusbashashaik.github.io/Social_OTT_Qatar/**
+   **https://yunusbashashaik.github.io/Premium_Store-Qatar/**
 
 The homepage catalog is the `SERVICES` array in `client/src/data/catalog.js`. Edit that file (and files under `client/public/services/`) then push/`npm run build`. GitHub Pages has no Node API; the catalog still appears because it is bundled in the client.
