@@ -655,7 +655,8 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-41.jpg"
   },
   {
     "id": "whatsapp-number",
@@ -670,6 +671,7 @@ export const SERVICES = [
       "month": 10,
       "year": 80
     },
-    "outOfStock": false
+    "outOfStock": false,
+    "image": "services/service-42.jpg"
   }
 ];
