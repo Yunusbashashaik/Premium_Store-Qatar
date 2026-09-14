@@ -40,6 +40,7 @@ function serviceSnapshot(service) {
     nameEn: service.nameEn,
     nameAr: service.nameAr,
     accent: service.accent,
+    image: service?.image || "",
     imageUrl,
   };
 }
@@ -112,6 +113,7 @@ export function CartProvider({ children }) {
         if (!service) return item;
         const snapshot = serviceSnapshot(service);
         if (
+          item.image === snapshot.image &&
           item.imageUrl === snapshot.imageUrl &&
           item.nameEn === snapshot.nameEn &&
           item.nameAr === snapshot.nameAr &&

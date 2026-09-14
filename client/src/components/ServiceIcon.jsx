@@ -43,8 +43,27 @@ export default function ServiceIcon({ service, size = "md" }) {
   );
 }
 
+function iconInitials(name, id) {
+  const words = String(name || "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length >= 2) {
+    return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  }
+  if (words[0]?.length >= 2) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+  const fromId = String(id || "")
+    .replace(/[^a-z0-9]+/gi, "")
+    .slice(0, 2)
+    .toUpperCase();
+  return fromId || "??";
+}
+
 function renderFallback(id, accent, name) {
-  const label = (name || id || "??").slice(0, 2).toUpperCase();
+  const label = iconInitials(name, id);
   return (
     <svg viewBox="0 0 48 48" className="brand-svg">
       <rect width="48" height="48" rx="12" fill="#0b1220" />
