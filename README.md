@@ -28,11 +28,15 @@ npm run build
 npm start   # serves built client + API on port 3001
 ```
 
-### Dynamic database (SQLite)
+### Hardcoded catalog
 
-Admin edits and public catalog/settings are stored in **`server/data/globalstore.db`** (not GitHub-tracked static files). Every visitor hitting the Node API sees the same live data.
+The public subscription list is **`client/src/data/catalog.js`** (`SERVICES`). Put artwork in **`client/public/services/`**. Those entries ship with the built site. They are **not** loaded from SQLite, `admin-state.json`, or browser cache, so they will not disappear on restart and old backups cannot bring deleted services back.
 
-Optional env:
+To add a service: append an object to `SERVICES` and add its image file, then rebuild/publish. To remove one: delete that object (and its image).
+
+### Site settings (SQLite)
+
+Complaint email, WhatsApp numbers, About Us, social links, and complaints persist in **`server/data/globalstore.db`**. Optional env:
 
 - `DATABASE_PATH` — custom SQLite file path
 - `ADMIN_USERNAME` (default: `admin`)
@@ -41,12 +45,13 @@ Optional env:
 
 ### Admin panel
 
-Click the **Admin** icon in the header. A modal prompts for credentials, then opens the Admin Dashboard:
+Click the **Admin** icon in the header. A modal prompts for credentials, then opens settings only:
 
-- **Add Services** — JPEG image, name, EN/AR descriptions, 1-month and 1-year prices
-- **Edit Services** — dropdown for Services, Complaint Email ID, Contact Details (WhatsApp), and About Us / social links
+- **Complaint Email ID**
+- **Contact Details** (WhatsApp)
+- **About Us** / social links
 
-Default credentials: `admin` / `Go$StQ821` (override with `ADMIN_USERNAME` / `ADMIN_PASSWORD`).
+The catalog is not edited in Admin. Default credentials: `admin` / `Go$StQ821` (override with `ADMIN_USERNAME` / `ADMIN_PASSWORD`).
 
 Out-of-stock services use price `0`, show an **Out of Stock** note, and disable Add to Cart.
 
@@ -108,4 +113,4 @@ Pushes to **`main`** build the site into the **repository root** on the same bra
 
    **https://yunusbashashaik.github.io/Social_OTT_Qatar/**
 
-The homepage has **no bundled catalog**. If the API is unavailable it stays empty until Admin adds services on the Node server (`npm start` on a host such as Render or GoDaddy Node). Point that host at a persistent disk so `server/data/globalstore.db` survives restarts.
+The homepage catalog is the `SERVICES` array in `client/src/data/catalog.js`. Edit that file (and files under `client/public/services/`) then push/`npm run build`. GitHub Pages has no Node API; the catalog still appears because it is bundled in the client.

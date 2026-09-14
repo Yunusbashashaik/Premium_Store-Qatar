@@ -21,9 +21,13 @@ Vite proxies `/api` to port **3001** during development. For production-style se
 - **Test:** `npm run test` (server API tests only)
 - **Build:** `npm run build`
 
-### Dynamic database
+### Catalog (hardcoded)
 
-Catalog, site settings (complaint email, WhatsApp numbers, About Us, social links), and complaints persist in **SQLite** at `server/data/globalstore.db` (override with `DATABASE_PATH`). Uploaded service images live under `server/data/uploads/services/` and are served from `/api/uploads/...`. Public pages load live data via `GET /api/services` and `GET /api/settings`.
+The storefront list is `client/src/data/catalog.js` (`SERVICES`) plus images in `client/public/services/`. SQLite, `admin-state.json`, and `localStorage` are **not** used for services, so leftover backups cannot restore a deleted catalog.
+
+### Site settings database
+
+Site settings (complaint email, WhatsApp numbers, About Us, social links) and complaints persist in **SQLite** at `server/data/globalstore.db` (override with `DATABASE_PATH`).
 
 ### Complaint email
 
@@ -31,7 +35,7 @@ Local dev works without SMTP: submissions are stored in SQLite (and appended to 
 
 ### Admin panel
 
-Click the header Admin icon to open a **modal** (no separate `/admin` page). After login, the dashboard offers **Add Services** and **Edit Services** (Services, Complaint Email, Contact Details, About Us). Configure `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and optionally `ADMIN_SESSION_SECRET`. Session token is stored in `localStorage` key `globalstores_admin_token`.
+Click the header Admin icon to open a **modal** (no separate `/admin` page). After login, the dashboard offers **Complaint Email**, **Contact Details**, and **About Us**. Catalog entries are not managed in Admin. Configure `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and optionally `ADMIN_SESSION_SECRET`. Session token is stored in `localStorage` key `globalstores_admin_token`.
 
 **GoDaddy:** Admin requires the Node process (`npm run build && npm start`). Static FTP uploads cannot serve `/api/admin/login` and will show “Load failed”. Verify `GET /api/health` on the live domain. If the API is on another host, set `apiUrl` in `client/public/runtime-config.js`.
 

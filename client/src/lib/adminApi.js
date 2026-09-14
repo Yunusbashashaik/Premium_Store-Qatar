@@ -164,69 +164,6 @@ export async function adminValidateSession(token) {
   }
 }
 
-export async function adminFetchServices(token) {
-  const data = await requestJson("/api/admin/services", { token });
-  return data.services;
-}
-
-export async function adminCreateService(token, payload, imageFile) {
-  const formData = new FormData();
-  formData.append("nameEn", payload.nameEn || "");
-  formData.append("nameAr", payload.nameAr || payload.nameEn || "");
-  formData.append("descriptionEn", payload.descriptionEn || "");
-  formData.append("descriptionAr", payload.descriptionAr || "");
-  formData.append("priceMonth", String(payload.prices?.month ?? ""));
-  formData.append("priceYear", String(payload.prices?.year ?? ""));
-  if (payload.outOfStock !== undefined) {
-    formData.append("outOfStock", String(Boolean(payload.outOfStock)));
-  }
-  if (imageFile) formData.append("image", imageFile);
-
-  const data = await requestJson("/api/admin/services", {
-    method: "POST",
-    token,
-    formData,
-  });
-  return data.service;
-}
-
-export async function adminSaveService(token, id, payload, imageFile) {
-  if (imageFile) {
-    const formData = new FormData();
-    if (payload.nameEn !== undefined) formData.append("nameEn", payload.nameEn);
-    if (payload.nameAr !== undefined) formData.append("nameAr", payload.nameAr);
-    if (payload.descriptionEn !== undefined) {
-      formData.append("descriptionEn", payload.descriptionEn);
-    }
-    if (payload.descriptionAr !== undefined) {
-      formData.append("descriptionAr", payload.descriptionAr);
-    }
-    if (payload.prices?.month !== undefined) {
-      formData.append("priceMonth", String(payload.prices.month));
-    }
-    if (payload.prices?.year !== undefined) {
-      formData.append("priceYear", String(payload.prices.year));
-    }
-    if (payload.outOfStock !== undefined) {
-      formData.append("outOfStock", String(Boolean(payload.outOfStock)));
-    }
-    formData.append("image", imageFile);
-    const data = await requestJson(`/api/admin/services/${id}`, {
-      method: "PUT",
-      token,
-      formData,
-    });
-    return data.service;
-  }
-
-  const data = await requestJson(`/api/admin/services/${id}`, {
-    method: "PUT",
-    token,
-    body: payload,
-  });
-  return data.service;
-}
-
 export async function adminFetchSettings(token) {
   const data = await requestJson("/api/admin/settings", { token });
   return data.settings;
@@ -243,19 +180,6 @@ export async function adminSaveSettings(token, patch) {
   return data.settings;
 }
 
-export async function adminDeleteService(token, id) {
-  await requestJson(`/api/admin/services/${id}`, { method: "DELETE", token });
-}
-
-export function notifyServicesUpdated(services) {
-  if (Array.isArray(services)) rememberLiveServices(services);
-  window.dispatchEvent(
-    new CustomEvent("gs:services-updated", {
-      detail: Array.isArray(services) ? { services } : undefined,
-    }),
-  );
-}
-
 export async function adminTranslate(token, text) {
   const data = await requestJson("/api/admin/translate", {
     method: "POST",
@@ -265,8 +189,17 @@ export async function adminTranslate(token, text) {
   return data.text;
 }
 
-const LIVE_SERVICES_KEY = "gs_live_services_v3";
 const LIVE_SETTINGS_KEY = "gs_live_settings";
+
+export function forgetCachedServices() {
+  try {
+    localStorage.removeItem("gs_live_services_v3");
+    localStorage.removeItem("gs_live_services_v2");
+    localStorage.removeItem("gs_live_services");
+  } catch {
+    /* private mode */
+  }
+}
 
 function readLiveCache(key) {
   try {
@@ -293,34 +226,20 @@ export function getCachedPublicSettings() {
 }
 
 export function getCachedPublicServices() {
-  const cached = readLiveCache(LIVE_SERVICES_KEY);
-  if (Array.isArray(cached)) return cached;
-  return JSON.parse(JSON.stringify(SERVICES));
+  return SERVICES.map((service) => ({ ...service }));
 }
 
-export function rememberLiveServices(services) {
-  if (Array.isArray(services)) writeLiveCache(LIVE_SERVICES_KEY, services);
+export function rememberLiveServices() {
+  forgetCachedServices();
+}
+
+export async function fetchPublicServices() {
+  forgetCachedServices();
+  return SERVICES.map((service) => ({ ...service }));
 }
 
 export function rememberLiveSettings(settings) {
   if (settings && typeof settings === "object") writeLiveCache(LIVE_SETTINGS_KEY, settings);
-}
-
-export async function fetchPublicServices() {
-  if (await hasBackendApi()) {
-    try {
-      const data = await requestJson("/api/services");
-      if (Array.isArray(data.services)) {
-        writeLiveCache(LIVE_SERVICES_KEY, data.services);
-        return data.services;
-      }
-    } catch {
-      /* fall through to last live catalog */
-    }
-  }
-  const cached = readLiveCache(LIVE_SERVICES_KEY);
-  if (Array.isArray(cached)) return cached;
-  return JSON.parse(JSON.stringify(SERVICES));
 }
 
 export async function fetchPublicSettings() {

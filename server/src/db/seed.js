@@ -1,12 +1,12 @@
+import fs from "fs";
 import {
   bindPersist,
   hydratePersistedAdminState,
   persistAdminState,
   withoutPersist,
-  catalogMatchesDefaults,
-  settingsMatchDefaults,
   CATALOG_GENERATION,
 } from "./persist.js";
+import { SERVICE_UPLOADS_DIR } from "./connection.js";
 import {
   getServiceImageBlob,
   listServices,
@@ -30,27 +30,30 @@ bindPersist({
   getServiceImageBlob,
 });
 
+function clearServiceUploads() {
+  try {
+    fs.rmSync(SERVICE_UPLOADS_DIR, { recursive: true, force: true });
+    fs.mkdirSync(SERVICE_UPLOADS_DIR, { recursive: true });
+  } catch (err) {
+    console.error("Failed to clear service uploads", err?.message || err);
+  }
+}
+
 export function seedDatabase() {
   const settingsSeeded = withoutPersist(() => seedSettingsIfEmpty());
   const hydrated = hydratePersistedAdminState();
-  if (hydrated.restoredServices) {
-    setSetting("catalogGeneration", CATALOG_GENERATION);
-  }
+
+  // Catalog is hardcoded in the client. Never keep leftover DB/snapshot services.
+  withoutPersist(() => replaceAllServices([]));
+  clearServiceUploads();
+  setSetting("catalogGeneration", CATALOG_GENERATION);
+  persistAdminState();
 
   const gen = Number(getSetting("catalogGeneration") || 0);
-  let catalogReset = false;
-  if (gen !== CATALOG_GENERATION) {
-    withoutPersist(() => replaceAllServices([]));
-    setSetting("catalogGeneration", CATALOG_GENERATION);
-    persistAdminState();
-    catalogReset = true;
-  } else {
-    const services = listServices();
-    const settings = getAllSettings();
-    if (!catalogMatchesDefaults(services) || !settingsMatchDefaults(settings)) {
-      persistAdminState();
-    }
-  }
-
-  return { servicesSeeded: false, settingsSeeded, hydrated, catalogReset };
+  return {
+    servicesSeeded: false,
+    settingsSeeded,
+    hydrated,
+    catalogReset: gen === CATALOG_GENERATION,
+  };
 }

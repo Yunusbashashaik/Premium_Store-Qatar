@@ -264,15 +264,3 @@ export function replaceAllServices(services) {
   persistAdminState();
   return listServices();
 }
-
-export function seedServicesIfEmpty(defaults) {
-  if (countServices() > 0) return false;
-  replaceAllServices(
-    defaults.map((service, index) => ({
-      ...service,
-      sortOrder: index,
-      imageUrl: service.imageUrl || null,
-    })),
-  );
-  return true;
-}

@@ -3,13 +3,11 @@ import CatalogSearch from "../components/CatalogSearch.jsx";
 import ServicesSection from "../components/ServicesSection.jsx";
 import { UiIcon } from "../components/UiIcon.jsx";
 import ViewPlansModal from "../components/ViewPlansModal.jsx";
-import { fetchServices, filterServices } from "../data/catalog.js";
-import { getCachedPublicServices } from "../lib/adminApi.js";
+import { SERVICES, filterServices } from "../data/catalog.js";
 import { wallpaperUrl } from "../data/serviceImages.js";
 
 export default function HomePage({ lang, t }) {
-  const [services, setServices] = useState(getCachedPublicServices);
-  const [loadError, setLoadError] = useState("");
+  const services = SERVICES;
   const [plansService, setPlansService] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const searchRef = useRef(null);
@@ -27,38 +25,6 @@ export default function HomePage({ lang, t }) {
     }
     window.scrollTo(0, 0);
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = (event) => {
-      const fromEvent = event?.detail?.services;
-      if (Array.isArray(fromEvent)) {
-        if (!cancelled) {
-          setServices(fromEvent);
-          setLoadError("");
-        }
-        return;
-      }
-    fetchServices()
-        .then((list) => {
-          if (!cancelled && Array.isArray(list)) {
-            setServices(list);
-            setLoadError("");
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setLoadError(t.servicesLoadFallback);
-          }
-        });
-    };
-    load();
-    window.addEventListener("gs:services-updated", load);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("gs:services-updated", load);
-    };
-  }, [t.servicesLoadFallback]);
 
   const headline = t.heroHeadlineParts || {
     before: t.heroHeadline,
@@ -172,8 +138,7 @@ export default function HomePage({ lang, t }) {
               inputRef={searchRef}
             />
           </div>
-          {loadError ? <p className="catalog-note">{loadError}</p> : null}
-          {!services.length && !loadError ? (
+          {!services.length ? (
             <p className="catalog-empty">{t.catalogEmpty}</p>
           ) : searchQuery.trim() && !visibleServices.length ? (
             <p className="catalog-empty">{t.searchEmpty}</p>

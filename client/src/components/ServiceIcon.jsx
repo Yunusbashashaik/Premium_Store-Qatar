@@ -1,21 +1,19 @@
 import { useEffect, useState } from "react";
-import { serviceImageUrl } from "../data/serviceImages.js";
-import { apiUrl } from "../lib/adminApi.js";
+import { catalogImageUrl } from "../data/serviceImages.js";
 
-/** Artwork from an admin upload, with initials fallback when none is set. */
+/** Artwork from the hardcoded catalog, with initials fallback when none is set. */
 export default function ServiceIcon({ service, size = "md" }) {
   const accent = service.accent || "#0055ff";
   const id = service.id || "";
-  const uploaded = resolveUploadedSrc(service);
-  const bundled = serviceImageUrl(id);
-  const [src, setSrc] = useState(uploaded || bundled);
+  const catalogSrc = catalogImageUrl(service.image || service.imageUrl);
+  const [src, setSrc] = useState(catalogSrc);
   const [failed, setFailed] = useState(false);
   const name = service.nameEn || id;
 
   useEffect(() => {
-    setSrc(uploaded || bundled);
+    setSrc(catalogSrc);
     setFailed(false);
-  }, [uploaded, bundled]);
+  }, [catalogSrc]);
 
   return (
     <div
@@ -33,17 +31,6 @@ export default function ServiceIcon({ service, size = "md" }) {
             loading="lazy"
             decoding="async"
             onError={() => {
-              const blobUrl = id
-                ? apiUrl(`/api/services/${encodeURIComponent(id)}/image`)
-                : null;
-              if (blobUrl && src !== blobUrl) {
-                setSrc(blobUrl);
-                return;
-              }
-              if (bundled && src !== bundled) {
-                setSrc(bundled);
-                return;
-              }
               setFailed(true);
             }}
           />
@@ -54,22 +41,6 @@ export default function ServiceIcon({ service, size = "md" }) {
       </span>
     </div>
   );
-}
-
-function resolveUploadedSrc(service) {
-  const src = service?.imageSrc || "";
-  if (src.startsWith("data:") || src.startsWith("blob:")) return src;
-  const url = service?.imageUrl || "";
-  if (!url) {
-    if (service?.hasCustomImage && service.id) {
-      return apiUrl(`/api/services/${encodeURIComponent(service.id)}/image`);
-    }
-    return null;
-  }
-  if (url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("http")) {
-    return url;
-  }
-  return apiUrl(url);
 }
 
 function renderFallback(id, accent, name) {
