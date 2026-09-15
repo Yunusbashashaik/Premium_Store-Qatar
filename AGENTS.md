@@ -42,3 +42,4 @@ Click the header Admin icon to open a **modal** (no separate `/admin` page). Aft
 - WhatsApp buttons open `wa.me` in a new tab (external; no local WhatsApp service). Numbers come from the database settings.
 - Arabic mode toggles `body.rtl` and persists language in `localStorage` key `globalstores_lang`.
 - Services with price `0` / `outOfStock` show an Out of Stock badge and disable Add to Cart.
+- Optional Eid/Special offers persist `offerType` + `offerExpiresAt`. Expired offers are hidden from `GET /api/services` and remain in Admin.

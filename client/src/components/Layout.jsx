@@ -9,6 +9,7 @@ import {
   setSupportNumbers,
 } from "../data/catalog.js";
 import { getCachedPublicServices } from "../lib/adminApi.js";
+import { filterPublicServices } from "@shared/offers.js";
 import { useSettings } from "../context/SettingsContext.jsx";
 import AdminPanel from "./AdminPanel.jsx";
 import ComplaintForm from "./ComplaintForm.jsx";
@@ -114,7 +115,10 @@ export default function Layout({ lang, setLang, t }) {
     return () => document.removeEventListener("pointerdown", onDoc);
   }, [cartOpen]);
 
-  const featured = useMemo(() => services.slice(0, 3), [services]);
+  const featured = useMemo(
+    () => filterPublicServices(services).slice(0, 3),
+    [services],
+  );
 
   const openFab = useCallback(() => {
     const phone = nextSupportNumber();

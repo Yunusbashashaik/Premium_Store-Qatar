@@ -6,6 +6,7 @@ import ViewPlansModal from "../components/ViewPlansModal.jsx";
 import { SERVICES, fetchServices, filterServices } from "../data/catalog.js";
 import { getCachedPublicServices } from "../lib/adminApi.js";
 import { wallpaperUrl } from "../data/serviceImages.js";
+import { filterPublicServices } from "@shared/offers.js";
 
 export default function HomePage({ lang, t }) {
   const [services, setServices] = useState(
@@ -18,7 +19,7 @@ export default function HomePage({ lang, t }) {
   const wallpaper = wallpaperUrl();
 
   const visibleServices = useMemo(
-    () => filterServices(services, searchQuery),
+    () => filterServices(filterPublicServices(services), searchQuery),
     [services, searchQuery],
   );
 
@@ -175,7 +176,7 @@ export default function HomePage({ lang, t }) {
             />
           </div>
             {loadError ? <p className="catalog-note">{loadError}</p> : null}
-            {!services.length ? (
+            {!filterPublicServices(services).length ? (
             <p className="catalog-empty">{t.catalogEmpty}</p>
           ) : searchQuery.trim() && !visibleServices.length ? (
             <p className="catalog-empty">{t.searchEmpty}</p>
