@@ -53,12 +53,57 @@ describe("services + admin API", () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  it("does not seed a factory catalog", async () => {
+  it("seeds the default catalog and still lists admin-created services", async () => {
     const res = await request(app).get("/api/services");
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(res.body.services));
+    assert.ok(res.body.services.length >= 2);
     const ids = res.body.services.map((s) => s.id);
-    assert.deepEqual(ids, [streamId]);
+    assert.ok(ids.includes(streamId));
+  });
+
+  it("keeps admin create/update after a second seedDatabase() restart", async () => {
+    const created = await request(app)
+      .post("/api/admin/services")
+      .set("Authorization", `Bearer ${token}`)
+      .field("nameEn", "Restart Survivor")
+      .field("nameAr", "ناجي إعادة التشغيل")
+      .field("descriptionEn", "Must remain after seed")
+      .field("descriptionAr", "يجب أن يبقى")
+      .field("priceMonth", "12")
+      .field("priceYear", "99");
+    assert.equal(created.status, 201);
+    const survivorId = created.body.service.id;
+
+    const patch = await request(app)
+      .put(`/api/admin/services/${streamId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ prices: { month: 44, year: 440 }, nameEn: "Patched Stream" });
+    assert.equal(patch.status, 200);
+
+    seedDatabase();
+
+    const listed = await request(app).get("/api/services");
+    const survivor = listed.body.services.find((s) => s.id === survivorId);
+    const patched = listed.body.services.find((s) => s.id === streamId);
+    assert.ok(survivor);
+    assert.equal(survivor.prices.month, 12);
+    assert.equal(patched.prices.month, 44);
+    assert.equal(patched.nameEn, "Patched Stream");
+  });
+
+  it("allows partial service updates (prices only)", async () => {
+    const before = await request(app).get("/api/services");
+    const original = before.body.services.find((s) => s.id === streamId);
+    const update = await request(app)
+      .put(`/api/admin/services/${streamId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ prices: { month: 6.5 } });
+    assert.equal(update.status, 200);
+    assert.equal(update.body.service.prices.month, 6.5);
+    assert.equal(update.body.service.prices.year, original.prices.year);
+    assert.equal(update.body.service.nameEn, original.nameEn);
+    assert.equal(update.body.service.descriptionEn, original.descriptionEn);
   });
 
   it("lists public settings from the database", async () => {

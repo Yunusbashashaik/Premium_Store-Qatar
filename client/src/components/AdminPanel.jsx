@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import GlassModal from "./GlassModal.jsx";
 import {
+  adminCreateService,
+  adminDeleteService,
+  adminFetchServices,
   adminFetchSettings,
   adminLogin,
+  adminSaveService,
   adminSaveSettings,
+  adminTranslate,
   adminValidateSession,
+  notifyServicesUpdated,
 } from "../lib/adminApi.js";
+import { compressJpeg } from "../lib/compressJpeg.js";
 
 const TOKEN_KEY = "globalstores_admin_token";
 const TOAST_MS = 3200;
@@ -19,7 +26,16 @@ function setToken(token) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+const emptyServiceDraft = {
+  nameEn: "",
+  nameAr: "",
+  descriptionEn: "",
+  descriptionAr: "",
+  prices: { month: "", year: "" },
+};
+
 const EDIT_SECTIONS = [
+  { id: "services", labelKey: "adminEditServices" },
   { id: "email", labelKey: "adminEditEmail" },
   { id: "contact", labelKey: "adminEditContact" },
   { id: "about", labelKey: "adminEditAbout" },
@@ -59,6 +75,19 @@ function formatWhatsAppInput(value) {
   return digits ? `+${digits}` : "+";
 }
 
+function toDraft(service) {
+  return {
+    nameEn: service.nameEn || "",
+    nameAr: service.nameAr || "",
+    descriptionEn: service.descriptionEn || "",
+    descriptionAr: service.descriptionAr || "",
+    prices: {
+      month: service.prices?.month ?? "",
+      year: service.prices?.year ?? "",
+    },
+  };
+}
+
 export default function AdminPanel({ open, onClose, t }) {
   const [token, setTokenState] = useState(() => getToken());
   const [view, setView] = useState("login");
@@ -68,10 +97,17 @@ export default function AdminPanel({ open, onClose, t }) {
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [translating, setTranslating] = useState("");
+  const [services, setServices] = useState([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [draft, setDraft] = useState(emptyServiceDraft);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
   const [settingsDraft, setSettingsDraft] = useState(null);
   const [confirmContact, setConfirmContact] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
-  const settingsCache = useRef(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const cacheRef = useRef({ services: null, settings: null });
   const toastTimer = useRef(null);
 
   const showToast = useCallback((text) => {
@@ -87,12 +123,19 @@ export default function AdminPanel({ open, onClose, t }) {
   }, []);
 
   const prefetch = useCallback(async (sessionToken) => {
-    const settings = settingsCache.current
-      ? settingsCache.current
-      : await adminFetchSettings(sessionToken);
-    settingsCache.current = settings;
+    const [list, settings] = await Promise.all([
+      cacheRef.current.services
+        ? Promise.resolve(cacheRef.current.services)
+        : adminFetchServices(sessionToken),
+      cacheRef.current.settings
+        ? Promise.resolve(cacheRef.current.settings)
+        : adminFetchSettings(sessionToken),
+    ]);
+    cacheRef.current.services = list;
+    cacheRef.current.settings = settings;
+    setServices(list);
     setSettingsDraft(toSettingsDraft(settings));
-    return settings;
+    return { list, settings };
   }, []);
 
   useEffect(() => {
@@ -100,6 +143,7 @@ export default function AdminPanel({ open, onClose, t }) {
     setError("");
     setConfirmContact(false);
     setConfirmEmail(false);
+    setConfirmDelete(false);
 
     const existing = getToken();
     if (!existing) {
@@ -132,6 +176,12 @@ export default function AdminPanel({ open, onClose, t }) {
     };
   }, [open, prefetch]);
 
+  useEffect(() => {
+    return () => {
+      if (imagePreview?.startsWith("blob:")) URL.revokeObjectURL(imagePreview);
+    };
+  }, [imagePreview]);
+
   const onLogin = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -154,7 +204,10 @@ export default function AdminPanel({ open, onClose, t }) {
     setToken("");
     setTokenState("");
     setView("login");
-    settingsCache.current = null;
+    cacheRef.current = { services: null, settings: null };
+    setServices([]);
+    setSelectedId("");
+    setDraft(emptyServiceDraft);
     setSettingsDraft(null);
     setToast("");
     setError("");
@@ -163,14 +216,223 @@ export default function AdminPanel({ open, onClose, t }) {
   const goDashboard = () => {
     setView("dashboard");
     setError("");
+    setSelectedId("");
+    setDraft(emptyServiceDraft);
+    setImageFile(null);
+    setImagePreview("");
+  };
+
+  const openAdd = () => {
+    setView("add");
+    setDraft(emptyServiceDraft);
+    setImageFile(null);
+    setImagePreview("");
+    setError("");
+  };
+
+  const openEditMenu = () => {
+    setView("edit-menu");
+    setError("");
+    prefetch(token).catch((err) => setError(err.message));
   };
 
   const selectEditSection = async (sectionId) => {
     setError("");
     setBusy(true);
     try {
+      if (sectionId === "services") {
+        await prefetch(token);
+        setSelectedId("");
+        setDraft(emptyServiceDraft);
+        setImageFile(null);
+        setImagePreview("");
+        setView("edit-services");
+        return;
+      }
       await prefetch(token);
       setView(`edit-${sectionId}`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onSelectService = (id) => {
+    setSelectedId(id);
+    const service = services.find((s) => s.id === id);
+    if (service) {
+      setDraft(toDraft(service));
+      setImagePreview(service.imageSrc || service.imageUrl || "");
+    }
+    setImageFile(null);
+    setError("");
+  };
+
+  const onPickImage = async (file) => {
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    const ok =
+      file.type === "image/jpeg" ||
+      file.type === "image/jpg" ||
+      name.endsWith(".jpg") ||
+      name.endsWith(".jpeg");
+    if (!ok) {
+      setError(t.adminImageJpegOnly);
+      return;
+    }
+    setError("");
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    try {
+      const compact = await compressJpeg(file);
+      setImageFile(compact);
+      setImagePreview(URL.createObjectURL(compact));
+    } catch {
+      /* keep original file and preview */
+    }
+  };
+
+  const fillArabic = async (field, { overwrite = true } = {}) => {
+    const source =
+      field === "name" ? draft.nameEn.trim() : draft.descriptionEn.trim();
+    if (!source) return "";
+    const current =
+      field === "name" ? draft.nameAr.trim() : draft.descriptionAr.trim();
+    if (!overwrite && current) return current;
+    setTranslating(field);
+    setError("");
+    try {
+      const arabic = await adminTranslate(token, source);
+      setDraft((d) =>
+        field === "name" ? { ...d, nameAr: arabic } : { ...d, descriptionAr: arabic },
+      );
+      return arabic;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setTranslating("");
+    }
+  };
+
+  const onTranslate = async (field) => {
+    try {
+      await fillArabic(field, { overwrite: true });
+    } catch {
+      /* error is shown in the form */
+    }
+  };
+
+  const arabicForSave = async () => {
+    const nameAr =
+      draft.nameAr.trim() ||
+      (draft.nameEn.trim() ? await fillArabic("name", { overwrite: false }) : "");
+    const descriptionAr =
+      draft.descriptionAr.trim() ||
+      (draft.descriptionEn.trim()
+        ? await fillArabic("desc", { overwrite: false })
+        : "");
+    return {
+      nameAr: nameAr || draft.nameEn,
+      descriptionAr,
+    };
+  };
+
+  const onSaveNew = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const arabic = await arabicForSave();
+      const created = await adminCreateService(
+        token,
+        {
+          nameEn: draft.nameEn,
+          nameAr: arabic.nameAr,
+          descriptionEn: draft.descriptionEn,
+          descriptionAr: arabic.descriptionAr,
+          prices: {
+            month: Number(draft.prices.month),
+            year: Number(draft.prices.year),
+          },
+        },
+        imageFile,
+      );
+      const next = [created, ...services.filter((s) => s.id !== created.id)];
+      setServices(next);
+      cacheRef.current.services = next;
+      notifyServicesUpdated(next);
+      showToast(t.adminCreated);
+      setDraft(emptyServiceDraft);
+      setImageFile(null);
+      setImagePreview("");
+      goDashboard();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onSaveEditService = async (e) => {
+    e.preventDefault();
+    if (!selectedId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const arabic = await arabicForSave();
+      const updated = await adminSaveService(
+        token,
+        selectedId,
+        {
+          nameEn: draft.nameEn,
+          nameAr: arabic.nameAr,
+          descriptionEn: draft.descriptionEn,
+          descriptionAr: arabic.descriptionAr,
+          prices: {
+            month: Number(draft.prices.month),
+            year: Number(draft.prices.year),
+          },
+        },
+        imageFile,
+      );
+      const next = services.map((s) => (s.id === selectedId ? updated : s));
+      setServices(next);
+      cacheRef.current.services = next;
+      notifyServicesUpdated(next);
+      setDraft(toDraft(updated));
+      setImageFile(null);
+      setImagePreview(updated.imageSrc || updated.imageUrl || "");
+      showToast(t.adminSaved);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelServiceEdit = () => {
+    setSelectedId("");
+    setDraft(emptyServiceDraft);
+    setImageFile(null);
+    setImagePreview("");
+    setError("");
+  };
+
+  const confirmDeleteService = async () => {
+    if (!selectedId) return;
+    setBusy(true);
+    setError("");
+    try {
+      await adminDeleteService(token, selectedId);
+      const next = services.filter((s) => s.id !== selectedId);
+      setServices(next);
+      cacheRef.current.services = next;
+      notifyServicesUpdated(next);
+      setConfirmDelete(false);
+      cancelServiceEdit();
+      showToast(t.adminDeleted);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -185,7 +447,7 @@ export default function AdminPanel({ open, onClose, t }) {
       const settings = await adminSaveSettings(token, {
         complaintEmail: settingsDraft.complaintEmail,
       });
-      settingsCache.current = settings;
+      cacheRef.current.settings = settings;
       setSettingsDraft(toSettingsDraft(settings));
       setConfirmEmail(false);
       showToast(t.adminSettingsSaved);
@@ -204,7 +466,7 @@ export default function AdminPanel({ open, onClose, t }) {
         .map((n) => String(n).replace(/\D/g, ""))
         .filter(Boolean);
       const settings = await adminSaveSettings(token, { whatsappNumbers: numbers });
-      settingsCache.current = settings;
+      cacheRef.current.settings = settings;
       setSettingsDraft(toSettingsDraft(settings));
       setConfirmContact(false);
       showToast(t.adminSettingsSaved);
@@ -227,7 +489,7 @@ export default function AdminPanel({ open, onClose, t }) {
         ownersAr: settingsDraft.ownersAr,
         socialLinks: settingsDraft.socialLinks,
       });
-      settingsCache.current = settings;
+      cacheRef.current.settings = settings;
       setSettingsDraft(toSettingsDraft(settings));
       showToast(t.adminSettingsSaved);
     } catch (err) {
@@ -239,18 +501,30 @@ export default function AdminPanel({ open, onClose, t }) {
 
   if (!open) return null;
 
+  const selectedService = services.find((s) => s.id === selectedId);
   const screenTitle =
     view === "dashboard"
       ? t.adminDashboardTitle
-      : view === "edit-email"
-        ? t.adminEditEmail
-        : view === "edit-contact"
-          ? t.adminEditContact
-          : view === "edit-about"
-            ? t.adminEditAbout
-            : t.adminNavLabel;
+      : view === "add"
+        ? t.adminAddServices
+        : view === "edit-menu"
+          ? t.adminEditServicesBtn
+          : view === "edit-services"
+            ? t.adminEditServices
+            : view === "edit-email"
+              ? t.adminEditEmail
+              : view === "edit-contact"
+                ? t.adminEditContact
+                : view === "edit-about"
+                  ? t.adminEditAbout
+                  : t.adminNavLabel;
 
-  const backTarget = view.startsWith("edit-") ? "dashboard" : null;
+  const backTarget =
+    view === "add" || view === "edit-menu"
+      ? "dashboard"
+      : view.startsWith("edit-")
+        ? "edit-menu"
+        : null;
 
   return (
     <>
@@ -303,7 +577,13 @@ export default function AdminPanel({ open, onClose, t }) {
         <div className="admin-fs" role="dialog" aria-modal="true" aria-labelledby="admin-fs-title">
           <header className="admin-fs-header">
             {backTarget ? (
-              <button type="button" className="admin-back-btn" onClick={goDashboard}>
+              <button
+                type="button"
+                className="admin-back-btn"
+                onClick={() =>
+                  backTarget === "dashboard" ? goDashboard() : setView(backTarget)
+                }
+              >
                 ← {t.adminBack}
               </button>
             ) : (
@@ -334,21 +614,95 @@ export default function AdminPanel({ open, onClose, t }) {
             {view === "dashboard" ? (
               <div className="admin-dashboard">
                 <p className="admin-lead">{t.adminDashboardLead}</p>
-                <div className="admin-edit-sections admin-edit-sections--wide" role="menu">
-                  {EDIT_SECTIONS.map((section) => (
+                <div className="admin-dashboard-actions">
+                  <button type="button" className="btn btn-primary admin-dash-card" onClick={openAdd}>
+                    {t.adminAddServices}
+                  </button>
+                  <button type="button" className="btn btn-primary admin-dash-card" onClick={openEditMenu}>
+                    {t.adminEditServicesBtn}
+                  </button>
+                </div>
+                {error ? <p className="error-text">{error}</p> : null}
+              </div>
+            ) : null}
+
+            {view === "edit-menu" ? (
+              <div className="admin-edit-sections admin-edit-sections--wide" role="menu">
+                {EDIT_SECTIONS.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    role="menuitem"
+                    className="admin-edit-section-btn"
+                    onClick={() => selectEditSection(section.id)}
+                    disabled={busy}
+                  >
+                    {t[section.labelKey]}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {view === "add" ? (
+              <ServiceForm
+                t={t}
+                draft={draft}
+                setDraft={setDraft}
+                imagePreview={imagePreview}
+                onPickImage={onPickImage}
+                onTranslate={onTranslate}
+                onAutoTranslate={(field) =>
+                  fillArabic(field, { overwrite: false }).catch(() => {})
+                }
+                translating={translating}
+                onSubmit={onSaveNew}
+                onCancel={goDashboard}
+                busy={busy}
+                error={error}
+                requireImage
+              />
+            ) : null}
+
+            {view === "edit-services" ? (
+              <div className="admin-layout">
+                <div className="admin-sidebar">
+                  {services.map((service) => (
                     <button
-                      key={section.id}
+                      key={service.id}
                       type="button"
-                      role="menuitem"
-                      className="admin-edit-section-btn"
-                      onClick={() => selectEditSection(section.id)}
-                      disabled={busy}
+                      className={`admin-service-btn${selectedId === service.id ? " active" : ""}`}
+                      onClick={() => onSelectService(service.id)}
                     >
-                      {t[section.labelKey]}
+                      <strong>
+                        {service.icon} {service.nameEn}
+                      </strong>
+                      <small>
+                        {service.outOfStock
+                          ? t.outOfStock
+                          : `${service.prices.month} / ${service.prices.year} QAR`}
+                      </small>
                     </button>
                   ))}
                 </div>
-                {error ? <p className="error-text">{error}</p> : null}
+                <ServiceForm
+                  t={t}
+                  draft={draft}
+                  setDraft={setDraft}
+                  imagePreview={imagePreview}
+                  onPickImage={onPickImage}
+                  onTranslate={onTranslate}
+                  onAutoTranslate={(field) =>
+                    fillArabic(field, { overwrite: false }).catch(() => {})
+                  }
+                  translating={translating}
+                  onSubmit={onSaveEditService}
+                  onCancel={cancelServiceEdit}
+                  onDelete={() => setConfirmDelete(true)}
+                  busy={busy}
+                  error={error}
+                  disabled={!selectedId}
+                  showDelete={Boolean(selectedId)}
+                />
               </div>
             ) : null}
 
@@ -380,7 +734,7 @@ export default function AdminPanel({ open, onClose, t }) {
                   <button type="submit" className="btn btn-primary" disabled={busy}>
                     {busy ? t.adminWorking : t.adminSave}
                   </button>
-                  <button type="button" className="btn btn-ghost" onClick={goDashboard}>
+                  <button type="button" className="btn btn-ghost" onClick={() => setView("edit-menu")}>
                     {t.adminCancel}
                   </button>
                 </div>
@@ -430,7 +784,7 @@ export default function AdminPanel({ open, onClose, t }) {
                   <button type="submit" className="btn btn-primary" disabled={busy}>
                     {busy ? t.adminWorking : t.adminSave}
                   </button>
-                  <button type="button" className="btn btn-ghost" onClick={goDashboard}>
+                  <button type="button" className="btn btn-ghost" onClick={() => setView("edit-menu")}>
                     {t.adminCancel}
                   </button>
                 </div>
@@ -504,7 +858,7 @@ export default function AdminPanel({ open, onClose, t }) {
                   <button type="submit" className="btn btn-primary" disabled={busy}>
                     {busy ? t.adminWorking : t.adminSave}
                   </button>
-                  <button type="button" className="btn btn-ghost" onClick={goDashboard}>
+                  <button type="button" className="btn btn-ghost" onClick={() => setView("edit-menu")}>
                     {t.adminCancel}
                   </button>
                 </div>
@@ -555,6 +909,182 @@ export default function AdminPanel({ open, onClose, t }) {
           </div>
         </GlassModal>
       ) : null}
+
+      {confirmDelete ? (
+        <GlassModal
+          elevated
+          title={t.adminConfirmDeleteTitle}
+          onClose={() => setConfirmDelete(false)}
+        >
+          <p className="modal-prose">
+            {(t.adminConfirmDeleteBody || "").replace("{name}", selectedService?.nameEn || "")}
+          </p>
+          <div className="admin-form-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={confirmDeleteService}
+            >
+              {busy ? t.adminWorking : t.adminConfirm}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>
+              {t.adminCancel}
+            </button>
+          </div>
+        </GlassModal>
+      ) : null}
     </>
+  );
+}
+
+function ServiceForm({
+  t,
+  draft,
+  setDraft,
+  imagePreview,
+  onPickImage,
+  onTranslate,
+  onAutoTranslate,
+  translating,
+  onSubmit,
+  onCancel,
+  onDelete,
+  busy,
+  error,
+  disabled = false,
+  showDelete = false,
+  requireImage = false,
+}) {
+  return (
+    <form className="admin-editor admin-editor--wide" onSubmit={onSubmit}>
+      <label>
+        {t.adminImageUpload}
+        <input
+          type="file"
+          accept="image/jpeg,.jpg,.jpeg"
+          onChange={(e) => onPickImage(e.target.files?.[0])}
+          required={requireImage && !imagePreview}
+          disabled={disabled}
+        />
+      </label>
+      {imagePreview ? (
+        <div className="admin-image-preview">
+          <img src={imagePreview} alt="" />
+        </div>
+      ) : null}
+      <div className="admin-field-head">
+        <span>{t.adminNameEn}</span>
+        <button
+          type="button"
+          className="btn btn-ghost admin-translate-btn"
+          onClick={() => onTranslate("name")}
+          disabled={disabled || Boolean(translating) || !draft.nameEn.trim()}
+        >
+          {translating === "name" ? t.adminTranslating : t.adminTranslate}
+        </button>
+      </div>
+      <label>
+        {t.adminNameEn}
+        <input
+          value={draft.nameEn}
+          onChange={(e) => setDraft((d) => ({ ...d, nameEn: e.target.value }))}
+          onBlur={() => onAutoTranslate?.("name")}
+          required
+          disabled={disabled}
+        />
+      </label>
+      <label>
+        {t.adminNameAr}
+        <input
+          value={draft.nameAr}
+          onChange={(e) => setDraft((d) => ({ ...d, nameAr: e.target.value }))}
+          dir="rtl"
+          disabled={disabled}
+        />
+      </label>
+      <div className="admin-field-head">
+        <span>{t.adminDescEn}</span>
+        <button
+          type="button"
+          className="btn btn-ghost admin-translate-btn"
+          onClick={() => onTranslate("desc")}
+          disabled={disabled || Boolean(translating) || !draft.descriptionEn.trim()}
+        >
+          {translating === "desc" ? t.adminTranslating : t.adminTranslate}
+        </button>
+      </div>
+      <label>
+        {t.adminDescEn}
+        <textarea
+          value={draft.descriptionEn}
+          onChange={(e) => setDraft((d) => ({ ...d, descriptionEn: e.target.value }))}
+          onBlur={() => onAutoTranslate?.("desc")}
+          required
+          disabled={disabled}
+        />
+      </label>
+      <label>
+        {t.adminDescAr}
+        <textarea
+          value={draft.descriptionAr}
+          onChange={(e) => setDraft((d) => ({ ...d, descriptionAr: e.target.value }))}
+          required
+          dir="rtl"
+          disabled={disabled}
+        />
+      </label>
+      <div className="admin-price-row">
+        <label>
+          {t.adminPriceMonth}
+          <input
+            type="number"
+            min="0"
+            step="0.001"
+            value={draft.prices.month}
+            onChange={(e) =>
+              setDraft((d) => ({
+                ...d,
+                prices: { ...d.prices, month: e.target.value },
+              }))
+            }
+            required
+            disabled={disabled}
+          />
+        </label>
+        <label>
+          {t.adminPriceYear}
+          <input
+            type="number"
+            min="0"
+            step="0.001"
+            value={draft.prices.year}
+            onChange={(e) =>
+              setDraft((d) => ({
+                ...d,
+                prices: { ...d.prices, year: e.target.value },
+              }))
+            }
+            required
+            disabled={disabled}
+          />
+        </label>
+      </div>
+      <p className="admin-hint">{t.adminOutOfStockHint}</p>
+      {error ? <p className="error-text">{error}</p> : null}
+      <div className="admin-form-actions">
+        <button type="submit" className="btn btn-primary" disabled={busy || disabled}>
+          {busy ? t.adminWorking : t.adminSave}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          {t.adminCancel}
+        </button>
+        {showDelete ? (
+          <button type="button" className="btn btn-ghost" onClick={onDelete}>
+            {t.adminDelete}
+          </button>
+        ) : null}
+      </div>
+    </form>
   );
 }

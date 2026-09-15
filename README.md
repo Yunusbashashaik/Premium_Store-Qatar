@@ -28,11 +28,13 @@ npm run build
 npm start   # serves built client + API on port 3001
 ```
 
-### Hardcoded catalog
+### Live catalog (SQLite)
 
-The public subscription list is **`client/src/data/catalog.js`** (`SERVICES`). Put artwork in **`client/public/services/`**. Those entries ship with the built site. They are **not** loaded from SQLite, `admin-state.json`, or browser cache, so they will not disappear on restart and old backups cannot bring deleted services back.
+The public subscription list is served from **`GET /api/services`**. On first start only, `client/src/data/servicesCatalog.js` is inserted if the database catalog is empty. Later Node / Passenger restarts **do not** overwrite prices, names, descriptions, images, or admin-added services.
 
-To add a service: append an object to `SERVICES` and add its image file, then rebuild/publish. To remove one: delete that object (and its image).
+Artwork for the seed catalog lives in **`client/public/services/`**. Admin uploads are stored in SQLite (`image_blob`) and `server/data/uploads/services/`.
+
+To change the live catalog: sign in to Admin → **Add Services** / **Edit Services**. Keep `server/data/` on a persistent disk.
 
 ### Site settings (SQLite)
 
@@ -45,13 +47,15 @@ Complaint email, WhatsApp numbers, About Us, social links, and complaints persis
 
 ### Admin panel
 
-Click the **Admin** icon in the header. A modal prompts for credentials, then opens settings only:
+Click the **Admin** icon in the header. After login the dashboard includes:
 
+- **Add Services** (JPEG, name EN/AR, description EN/AR, month/year prices)
+- **Edit Services** (partial updates: image, prices, names, descriptions, or mix)
 - **Complaint Email ID**
 - **Contact Details** (WhatsApp)
 - **About Us** / social links
 
-The catalog is not edited in Admin. Default credentials: `admin` / `Go$StQ821` (override with `ADMIN_USERNAME` / `ADMIN_PASSWORD`).
+Default credentials: `admin` / `Go$StQ821` (override with `ADMIN_USERNAME` / `ADMIN_PASSWORD`).
 
 Out-of-stock services use price `0`, show an **Out of Stock** note, and disable Add to Cart.
 
@@ -73,7 +77,8 @@ Admin login needs a **running Node app**. If `https://YOUR-DOMAIN/api/health` do
    ```
 7. Restart the application  
 8. Visit `https://YOUR-DOMAIN/api/health` — you must see JSON `ok: true`  
-9. Then sign in with `admin` / `Go$StQ821`
+9. Then sign in with `admin` / `Go$StQ821`  
+10. Edit a price or add a service, restart the application, and confirm the catalog did not revert
 
 Do **not** FTP only `client/dist` into `public_html`. That is static hosting and `/api/health` will 404.
 
@@ -113,4 +118,4 @@ Pushes to **`main`** build the site into the **repository root** on the same bra
 
    **https://yunusbashashaik.github.io/Premium_Store-Qatar/**
 
-The homepage catalog is the `SERVICES` array in `client/src/data/catalog.js`. Edit that file (and files under `client/public/services/`) then push/`npm run build`. GitHub Pages has no Node API; the catalog still appears because it is bundled in the client.
+The homepage catalog is loaded from `/api/services` when Node is running. GitHub Pages has no API, so it falls back to the bundled seed catalog until you publish to a Node/Passenger host.

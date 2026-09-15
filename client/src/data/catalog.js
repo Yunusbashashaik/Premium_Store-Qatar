@@ -49,7 +49,9 @@ Please provide payment details and complete my order.`;
 }
 
 export function fetchServices() {
-  return Promise.resolve(SERVICES.map((service) => ({ ...service })));
+  return import("../lib/adminApi.js").then(({ fetchPublicServices }) =>
+    fetchPublicServices(),
+  );
 }
 
 export function isOutOfStock(service) {

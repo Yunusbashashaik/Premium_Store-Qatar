@@ -3,10 +3,12 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   SERVICES,
   buildWhatsAppUrl,
+  fetchServices,
   nextSupportNumber,
   ownerDisplayNames,
   setSupportNumbers,
 } from "../data/catalog.js";
+import { getCachedPublicServices } from "../lib/adminApi.js";
 import { useSettings } from "../context/SettingsContext.jsx";
 import AdminPanel from "./AdminPanel.jsx";
 import ComplaintForm from "./ComplaintForm.jsx";
@@ -37,7 +39,9 @@ export default function Layout({ lang, setLang, t }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [subsOpen, setSubsOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
-  const services = SERVICES;
+  const [services, setServices] = useState(
+    () => getCachedPublicServices() || SERVICES,
+  );
   const subsRef = useRef(null);
   const cartRef = useRef(null);
   const { totalItems, syncFromServices } = useCart();
@@ -61,6 +65,25 @@ export default function Layout({ lang, setLang, t }) {
   useEffect(() => {
     setSupportNumbers(whatsappNumbers);
   }, [whatsappNumbers]);
+
+  const refreshServices = useCallback((list) => {
+    if (Array.isArray(list)) {
+      setServices(list);
+      return;
+    }
+    fetchServices()
+      .then((next) => {
+        if (Array.isArray(next)) setServices(next);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshServices();
+    const onUpdate = (event) => refreshServices(event.detail?.services);
+    window.addEventListener("gs:services-updated", onUpdate);
+    return () => window.removeEventListener("gs:services-updated", onUpdate);
+  }, [refreshServices]);
 
   useEffect(() => {
     syncFromServices(services);
