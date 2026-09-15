@@ -1,14 +1,14 @@
-import fs from "fs";
+import { DEFAULT_SERVICES } from "../config/defaultServices.js";
 import {
   bindPersist,
   hydratePersistedAdminState,
   persistAdminState,
   withoutPersist,
-  CATALOG_GENERATION,
 } from "./persist.js";
-import { SERVICE_UPLOADS_DIR } from "./connection.js";
 import {
+  countServices,
   getServiceImageBlob,
+  insertService,
   listServices,
   replaceAllServices,
 } from "../models/Service.js";
@@ -25,35 +25,48 @@ bindPersist({
   listServices,
   getAllSettings,
   countSettings,
+  countServices,
   replaceAllServices,
   replaceAllSettings,
   getServiceImageBlob,
 });
 
-function clearServiceUploads() {
-  try {
-    fs.rmSync(SERVICE_UPLOADS_DIR, { recursive: true, force: true });
-    fs.mkdirSync(SERVICE_UPLOADS_DIR, { recursive: true });
-  } catch (err) {
-    console.error("Failed to clear service uploads", err?.message || err);
+function seedDefaultCatalogIfEmpty() {
+  if (countServices() > 0) {
+    setSetting("catalogSeeded", true);
+    return false;
   }
+
+  // Catalog was already initialized (admin deleted every row). Do not re-insert defaults.
+  if (getSetting("catalogSeeded") === true) {
+    return false;
+  }
+
+  withoutPersist(() => {
+    DEFAULT_SERVICES.forEach((service, index) => {
+      insertService(
+        {
+          ...service,
+          sortOrder: service.sortOrder ?? index,
+        },
+        { persist: false },
+      );
+    });
+  });
+  setSetting("catalogSeeded", true);
+  return true;
 }
 
 export function seedDatabase() {
   const settingsSeeded = withoutPersist(() => seedSettingsIfEmpty());
   const hydrated = hydratePersistedAdminState();
-
-  // Catalog is hardcoded in the client. Never keep leftover DB/snapshot services.
-  withoutPersist(() => replaceAllServices([]));
-  clearServiceUploads();
-  setSetting("catalogGeneration", CATALOG_GENERATION);
+  const servicesSeeded = seedDefaultCatalogIfEmpty();
   persistAdminState();
 
-  const gen = Number(getSetting("catalogGeneration") || 0);
   return {
-    servicesSeeded: false,
+    servicesSeeded,
     settingsSeeded,
     hydrated,
-    catalogReset: gen === CATALOG_GENERATION,
+    catalogReset: false,
   };
 }

@@ -1,5 +1,5 @@
-/** Hardcoded store catalog. Edit this file to add, change, or remove services.
- *  These entries ship with the built site and are not loaded from the database.
+/** Seed catalog used only when the live database is empty.
+ *  After first seed, prices/names/images are admin-managed in SQLite.
  */
 export const SERVICES = [
   {

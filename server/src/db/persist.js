@@ -4,8 +4,8 @@ import { getActiveStorePath } from "./connection.js";
 import { DEFAULT_SETTINGS } from "../config/defaults.js";
 
 const SNAPSHOT_NAME = "admin-state.json";
-/** Bump this to ignore leftover catalog snapshots. Services are never restored. */
-export const CATALOG_GENERATION = 4;
+/** Snapshot format version. Never used to wipe or replace a live catalog. */
+export const CATALOG_GENERATION = 5;
 
 let source = null;
 let persistDisabled = 0;
@@ -36,14 +36,27 @@ function atomicWrite(filePath, data) {
   fs.renameSync(tmp, filePath);
 }
 
+function serializeServices() {
+  if (!source?.listServices) return [];
+  return source.listServices().map((service) => {
+    const blob = source.getServiceImageBlob?.(service.id);
+    const rest = { ...service };
+    delete rest.imageSrc;
+    return {
+      ...rest,
+      imageBase64:
+        blob && blob.length ? Buffer.from(blob).toString("base64") : undefined,
+    };
+  });
+}
+
 export function writeAdminSnapshot(state) {
   if (!state) return null;
   const payload = {
     version: 1,
     generation: CATALOG_GENERATION,
     savedAt: new Date().toISOString(),
-    // Catalog lives in client/src/data/catalog.js — never persist services.
-    services: [],
+    services: Array.isArray(state.services) ? state.services : [],
     settings: state.settings && typeof state.settings === "object" ? state.settings : {},
   };
   const body = `${JSON.stringify(payload, null, 2)}\n`;
@@ -61,7 +74,7 @@ export function persistAdminState() {
   if (persistDisabled || !source) return null;
   try {
     return writeAdminSnapshot({
-      services: [],
+      services: serializeServices(),
       settings: source.getAllSettings(),
     });
   } catch (err) {
@@ -110,11 +123,18 @@ export function hydratePersistedAdminState() {
 
   const currentSettings = source.getAllSettings();
   const snapSettings = snapshot.settings && typeof snapshot.settings === "object" ? snapshot.settings : null;
+  const snapServices = Array.isArray(snapshot.services) ? snapshot.services : [];
 
   let restoredServices = false;
   let restoredSettings = false;
 
   withoutPersist(() => {
+    const emptyCatalog = source.countServices() === 0;
+    if (emptyCatalog && snapServices.length > 0) {
+      source.replaceAllServices(snapServices);
+      restoredServices = true;
+    }
+
     if (snapSettings) {
       const emptySettings = source.countSettings() === 0;
       const currentIsDefault = settingsMatchDefaults(currentSettings);

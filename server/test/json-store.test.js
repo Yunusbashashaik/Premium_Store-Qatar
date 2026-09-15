@@ -24,9 +24,9 @@ describe("JSON file database fallback", () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  it("starts with an empty catalog on the JSON engine", () => {
+  it("seeds the default catalog on the JSON engine", () => {
     assert.equal(getDbEngine(), "json");
-    assert.equal(listServices().length, 0);
+    assert.ok(listServices().length > 0);
   });
 
   it("creates a service and updates settings", () => {

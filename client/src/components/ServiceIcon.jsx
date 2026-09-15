@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { catalogImageUrl } from "../data/serviceImages.js";
 
-/** Artwork from the hardcoded catalog, with initials fallback when none is set. */
+/** Artwork from the live catalog (`imageSrc`, `imageUrl`, or seed `image`). */
 export default function ServiceIcon({ service, size = "md" }) {
   const accent = service.accent || "#0055ff";
   const id = service.id || "";
-  const catalogSrc = catalogImageUrl(service.image || service.imageUrl);
+  const catalogSrc =
+    service.imageSrc ||
+    catalogImageUrl(service.image || service.imageUrl);
   const [src, setSrc] = useState(catalogSrc);
   const [failed, setFailed] = useState(false);
   const name = service.nameEn || id;

@@ -21,11 +21,9 @@ Vite proxies `/api` to port **3001** during development. For production-style se
 - **Test:** `npm run test` (server API tests only)
 - **Build:** `npm run build`
 
-### Catalog (hardcoded)
+### Catalog (live database)
 
-The storefront list is `client/src/data/catalog.js` (`SERVICES`) plus images in `client/public/services/`. SQLite, `admin-state.json`, and `localStorage` are **not** used for services, so leftover backups cannot restore a deleted catalog.
-
-### Site settings database
+The storefront list comes from **`GET /api/services`** (SQLite). `client/src/data/servicesCatalog.js` is used **only as a first-time seed** when the catalog is empty. Seed/startup never wipes or overwrites existing services.
 
 Site settings (complaint email, WhatsApp numbers, About Us, social links) and complaints persist in **SQLite** at `server/data/globalstore.db` (override with `DATABASE_PATH`).
 
@@ -35,7 +33,7 @@ Local dev works without SMTP: submissions are stored in SQLite (and appended to 
 
 ### Admin panel
 
-Click the header Admin icon to open a **modal** (no separate `/admin` page). After login, the dashboard offers **Complaint Email**, **Contact Details**, and **About Us**. Catalog entries are not managed in Admin. Configure `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and optionally `ADMIN_SESSION_SECRET`. Session token is stored in `localStorage` key `globalstores_admin_token`.
+Click the header Admin icon to open a **modal** (no separate `/admin` page). After login, the dashboard offers **Add Services**, **Edit Services**, **Complaint Email**, **Contact Details**, and **About Us**. Configure `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and optionally `ADMIN_SESSION_SECRET`. Session token is stored in `localStorage` key `globalstores_admin_token`.
 
 **GoDaddy:** Admin requires the Node process (`npm run build && npm start`). Static FTP uploads cannot serve `/api/admin/login` and will show “Load failed”. Verify `GET /api/health` on the live domain. If the API is on another host, set `apiUrl` in `client/public/runtime-config.js`.
 
