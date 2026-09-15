@@ -4,13 +4,20 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { DEFAULT_SERVICES } from "../src/config/defaultServices.js";
-import { closeDatabase, initDatabase } from "../src/db/connection.js";
-import { readAdminSnapshot } from "../src/db/persist.js";
+import {
+  closeDatabase,
+  getDataDir,
+  getLastMigration,
+  initDatabase,
+} from "../src/db/connection.js";
+import { readAdminSnapshot, withoutPersist } from "../src/db/persist.js";
+import { getHealthPayload } from "../src/health.js";
 import { seedDatabase } from "../src/db/seed.js";
 import {
   deleteService,
   insertService,
   listServices,
+  replaceAllServices,
   updateService,
 } from "../src/models/Service.js";
 import { getAllSettings, getSetting, updateSettings } from "../src/models/Settings.js";
@@ -175,6 +182,140 @@ describe("admin catalog persistence", () => {
       false,
     );
     assert.equal(listServices().find((s) => s.id === DEFAULT_SERVICES[0].id).prices.month, 77);
+
+    closeDatabase();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps admin renames after ephemeral in-app data is wiped when durable DATA_DIR remains", () => {
+    const ephemeralAppData = tempDir();
+    const durable = tempDir();
+    const prevDataDir = process.env.DATA_DIR;
+    process.env.DATA_DIR = durable;
+    try {
+      initDatabase(undefined, { skipMigrate: true, legacyDataDir: ephemeralAppData });
+      const first = seedDatabase();
+      assert.equal(first.catalogSeededThisBoot, true);
+      assert.equal(getDataDir(), path.resolve(durable));
+
+      const youtube = listServices().find((s) => s.id === "youtube-premium-personal");
+      const canva = listServices().find((s) => s.id === "canva-pro");
+      assert.ok(youtube);
+      assert.ok(canva);
+      updateService("youtube-premium-personal", { nameEn: "YouTube Premium" });
+      updateService("canva-pro", { nameEn: "Canva Pro" });
+
+      closeDatabase();
+      fs.rmSync(ephemeralAppData, { recursive: true, force: true });
+      assert.equal(fs.existsSync(path.join(durable, "globalstore.db")), true);
+
+      initDatabase(undefined, { skipMigrate: true, legacyDataDir: ephemeralAppData });
+      const afterRestart = seedDatabase();
+      assert.equal(afterRestart.catalogSeededThisBoot, false);
+      assert.equal(afterRestart.servicesSeeded, false);
+      assert.equal(
+        listServices().find((s) => s.id === "youtube-premium-personal").nameEn,
+        "YouTube Premium",
+      );
+      assert.equal(listServices().find((s) => s.id === "canva-pro").nameEn, "Canva Pro");
+
+      const health = getHealthPayload();
+      assert.equal(health.ok, true);
+      assert.equal(health.dataDir, path.resolve(durable));
+      assert.equal(health.services, listServices().length);
+      assert.equal(health.catalogSeededThisBoot, false);
+      assert.equal(health.catalogSeeded, true);
+      assert.equal(health.storePath, path.join(path.resolve(durable), "globalstore.db"));
+    } finally {
+      closeDatabase();
+      if (prevDataDir === undefined) delete process.env.DATA_DIR;
+      else process.env.DATA_DIR = prevDataDir;
+      fs.rmSync(durable, { recursive: true, force: true });
+      fs.rmSync(ephemeralAppData, { recursive: true, force: true });
+    }
+  });
+
+  it("seeds defaults only once on an empty durable store", () => {
+    const durable = tempDir();
+    const prevDataDir = process.env.DATA_DIR;
+    process.env.DATA_DIR = durable;
+    try {
+      initDatabase(undefined, { skipMigrate: true });
+      const first = seedDatabase();
+      assert.equal(first.catalogSeededThisBoot, true);
+      assert.equal(listServices().length, DEFAULT_SERVICES.length);
+      const youtubeDefault = listServices().find((s) => s.id === "youtube-premium-personal");
+      assert.ok(youtubeDefault.nameEn.includes("YouTube Premium"));
+
+      closeDatabase();
+      initDatabase(undefined, { skipMigrate: true });
+      const second = seedDatabase();
+      assert.equal(second.catalogSeededThisBoot, false);
+      assert.equal(second.servicesSeeded, false);
+      assert.equal(listServices().length, DEFAULT_SERVICES.length);
+      assert.equal(
+        listServices().find((s) => s.id === "youtube-premium-personal").nameEn,
+        youtubeDefault.nameEn,
+      );
+
+      const health = getHealthPayload();
+      assert.equal(health.catalogSeededThisBoot, false);
+      assert.equal(health.services, DEFAULT_SERVICES.length);
+    } finally {
+      closeDatabase();
+      if (prevDataDir === undefined) delete process.env.DATA_DIR;
+      else process.env.DATA_DIR = prevDataDir;
+      fs.rmSync(durable, { recursive: true, force: true });
+    }
+  });
+
+  it("copies a legacy in-app store into an empty durable directory once", () => {
+    const legacy = tempDir();
+    const durable = tempDir();
+    try {
+      initDatabase(path.join(legacy, "globalstore.db"));
+      seedDatabase();
+      updateService("youtube-premium-personal", { nameEn: "YouTube Premium" });
+      closeDatabase();
+
+      initDatabase(undefined, { dataDir: durable, legacyDataDir: legacy });
+      const migrated = getLastMigration();
+      assert.equal(migrated.migrated, true);
+      seedDatabase();
+      assert.equal(
+        listServices().find((s) => s.id === "youtube-premium-personal").nameEn,
+        "YouTube Premium",
+      );
+      assert.equal(getDataDir(), path.resolve(durable));
+    } finally {
+      closeDatabase();
+      fs.rmSync(legacy, { recursive: true, force: true });
+      fs.rmSync(durable, { recursive: true, force: true });
+    }
+  });
+
+  it("restores a durable snapshot over a re-seeded default catalog", () => {
+    const dir = tempDir();
+    const dbPath = path.join(dir, "store.db");
+    initDatabase(dbPath);
+    seedDatabase();
+    updateService("youtube-premium-personal", { nameEn: "YouTube Premium" });
+    updateService("canva-pro", { nameEn: "Canva Pro" });
+
+    withoutPersist(() => replaceAllServices(DEFAULT_SERVICES));
+    assert.ok(
+      listServices().find((s) => s.id === "youtube-premium-personal").nameEn.includes(
+        "Personal",
+      ),
+    );
+
+    const restored = seedDatabase();
+    assert.equal(restored.hydrated.restoredServices, true);
+    assert.equal(
+      listServices().find((s) => s.id === "youtube-premium-personal").nameEn,
+      "YouTube Premium",
+    );
+    assert.equal(listServices().find((s) => s.id === "canva-pro").nameEn, "Canva Pro");
 
     closeDatabase();
     fs.rmSync(dir, { recursive: true, force: true });

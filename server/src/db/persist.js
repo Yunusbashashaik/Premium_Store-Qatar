@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
-import { getActiveStorePath } from "./connection.js";
+import { getActiveStorePath, getDataDir, LEGACY_APP_DATA_DIR } from "./connection.js";
+import { DEFAULT_SERVICES } from "../config/defaultServices.js";
 import { DEFAULT_SETTINGS } from "../config/defaults.js";
 
 const SNAPSHOT_NAME = "admin-state.json";
@@ -23,10 +24,19 @@ export function withoutPersist(fn) {
   }
 }
 
-export function getSnapshotPaths() {
+export function getSnapshotWritePaths() {
+  const dirs = new Set();
   const storePath = getActiveStorePath();
-  const dir = path.dirname(storePath);
-  return [path.join(dir, SNAPSHOT_NAME)];
+  if (storePath) dirs.add(path.dirname(path.resolve(storePath)));
+  dirs.add(path.resolve(getDataDir()));
+  if (process.env.DATA_DIR) dirs.add(path.resolve(process.env.DATA_DIR));
+  return [...dirs].map((dir) => path.join(dir, SNAPSHOT_NAME));
+}
+
+export function getSnapshotPaths() {
+  const paths = new Set(getSnapshotWritePaths());
+  paths.add(path.join(path.resolve(LEGACY_APP_DATA_DIR), SNAPSHOT_NAME));
+  return [...paths];
 }
 
 function atomicWrite(filePath, data) {
@@ -60,7 +70,7 @@ export function writeAdminSnapshot(state) {
     settings: state.settings && typeof state.settings === "object" ? state.settings : {},
   };
   const body = `${JSON.stringify(payload, null, 2)}\n`;
-  for (const filePath of getSnapshotPaths()) {
+  for (const filePath of getSnapshotWritePaths()) {
     try {
       atomicWrite(filePath, body);
     } catch (err) {
@@ -116,6 +126,30 @@ export function settingsMatchDefaults(settings) {
   return settingsSignature(settings) === settingsSignature(DEFAULT_SETTINGS);
 }
 
+function serviceSignature(service) {
+  return [
+    service.id,
+    Number(service.prices?.month),
+    Number(service.prices?.year),
+    String(service.nameEn || ""),
+    String(service.nameAr || ""),
+    String(service.descriptionEn || ""),
+    String(service.descriptionAr || ""),
+    service.outOfStock ? 1 : 0,
+  ].join("|");
+}
+
+function catalogSignature(services) {
+  return (services || [])
+    .map(serviceSignature)
+    .sort()
+    .join("\n");
+}
+
+export function catalogMatchesDefaults(services) {
+  return catalogSignature(services) === catalogSignature(DEFAULT_SERVICES);
+}
+
 export function hydratePersistedAdminState() {
   if (!source) return { restored: false, reason: "unbound" };
   const snapshot = readAdminSnapshot();
@@ -129,8 +163,18 @@ export function hydratePersistedAdminState() {
   let restoredSettings = false;
 
   withoutPersist(() => {
-    const emptyCatalog = source.countServices() === 0;
-    if (emptyCatalog && snapServices.length > 0) {
+    const currentServices = source.listServices();
+    const emptyCatalog = currentServices.length === 0;
+    const currentIsDefault = catalogMatchesDefaults(currentServices);
+    const snapshotDiffers =
+      catalogSignature(currentServices) !== catalogSignature(snapServices);
+    const snapshotCanReplaceDefaults =
+      snapServices.length >= currentServices.length && snapServices.length > 0;
+    if (
+      snapServices.length > 0 &&
+      (emptyCatalog ||
+        (currentIsDefault && snapshotDiffers && snapshotCanReplaceDefaults))
+    ) {
       source.replaceAllServices(snapServices);
       restoredServices = true;
     }

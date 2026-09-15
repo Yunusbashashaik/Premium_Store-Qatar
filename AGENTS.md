@@ -23,19 +23,19 @@ Vite proxies `/api` to port **3001** during development. For production-style se
 
 ### Catalog (live database)
 
-The storefront list comes from **`GET /api/services`** (SQLite). `client/src/data/servicesCatalog.js` is used **only as a first-time seed** when the catalog is empty. Seed/startup never wipes or overwrites existing services.
+The storefront list comes from **`GET /api/services`** (SQLite). `client/src/data/servicesCatalog.js` is used **only as a first-time seed** when the durable catalog is empty. Seed/startup never wipes or overwrites existing services.
 
-Site settings (complaint email, WhatsApp numbers, About Us, social links) and complaints persist in **SQLite** at `server/data/globalstore.db` (override with `DATABASE_PATH`).
+Site settings, complaints, and the catalog persist under **`~/premium-store-qatar-data/`** by default (outside the app package so GoDaddy Restart Published App does not wipe them). Override with `DATA_DIR` and/or `DATABASE_PATH`. On first boot, existing `server/data` is copied into that durable folder if the target is empty.
 
 ### Complaint email
 
-Local dev works without SMTP: submissions are stored in SQLite (and appended to `server/data/complaints.jsonl`) and screenshots land in `server/data/uploads/`. Set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and optional `COMPLAINT_EMAIL`) for real delivery. The active inbox address is also editable in Admin → Edit Services → Complaint Email ID.
+Local dev works without SMTP: submissions are stored in SQLite (and appended to `complaints.jsonl` in the durable data directory) and screenshots land in `uploads/` there. Set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and optional `COMPLAINT_EMAIL`) for real delivery. The active inbox address is also editable in Admin → Edit Services → Complaint Email ID.
 
 ### Admin panel
 
 Click the header Admin icon to open a **modal** (no separate `/admin` page). After login, the dashboard offers **Add Services**, **Edit Services**, **Complaint Email**, **Contact Details**, and **About Us**. Configure `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and optionally `ADMIN_SESSION_SECRET`. Session token is stored in `localStorage` key `globalstores_admin_token`.
 
-**GoDaddy:** Admin requires the Node process (`npm run build && npm start`). Static FTP uploads cannot serve `/api/admin/login` and will show “Load failed”. Verify `GET /api/health` on the live domain. If the API is on another host, set `apiUrl` in `client/public/runtime-config.js`.
+**GoDaddy:** Admin requires the Node process (`npm run build && npm start`). Static FTP uploads cannot serve `/api/admin/login` and will show “Load failed”. Verify `GET /api/health` on the live domain (`dataDir`, `services`, `catalogSeededThisBoot`). After deploy, set `DATA_DIR` to a persistent volume if the host provides one (otherwise the process home directory `~/premium-store-qatar-data` is used), republish, then retest an admin rename + Restart Published App. If the API is on another host, set `apiUrl` in `client/public/runtime-config.js`.
 
 ### E2E notes
 

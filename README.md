@@ -30,16 +30,15 @@ npm start   # serves built client + API on port 3001
 
 ### Live catalog (SQLite)
 
-The public subscription list is served from **`GET /api/services`**. On first start only, `client/src/data/servicesCatalog.js` is inserted if the database catalog is empty. Later Node / Passenger restarts **do not** overwrite prices, names, descriptions, images, or admin-added services.
+The public subscription list is served from **`GET /api/services`**. On first start only, `client/src/data/servicesCatalog.js` is inserted if the **durable** catalog is empty. Later Node / Passenger restarts **do not** overwrite prices, names, descriptions, images, or admin-added services.
 
-Artwork for the seed catalog lives in **`client/public/services/`**. Admin uploads are stored in SQLite (`image_blob`) and `server/data/uploads/services/`.
+Artwork for the seed catalog lives in **`client/public/services/`**. Admin uploads are stored in SQLite (`image_blob`) and `uploads/services/` under the durable data directory.
 
-To change the live catalog: sign in to Admin → **Add Services** / **Edit Services**. Keep `server/data/` on a persistent disk.
+To change the live catalog: sign in to Admin → **Add Services** / **Edit Services**.
 
-### Site settings (SQLite)
+Default data directory is **`~/premium-store-qatar-data/`** (outside the application package). Optional env:
 
-Complaint email, WhatsApp numbers, About Us, social links, and complaints persist in **`server/data/globalstore.db`**. Optional env:
-
+- `DATA_DIR` — persistent folder for SQLite, `admin-state.json`, and uploads (recommended on GoDaddy)
 - `DATABASE_PATH` — custom SQLite file path
 - `ADMIN_USERNAME` (default: `admin`)
 - `ADMIN_PASSWORD` (default: `Go$StQ821`)
@@ -76,9 +75,12 @@ Admin login needs a **running Node app**. If `https://YOUR-DOMAIN/api/health` do
    npm run build
    ```
 7. Restart the application  
-8. Visit `https://YOUR-DOMAIN/api/health` — you must see JSON `ok: true`  
-9. Then sign in with `admin` / `Go$StQ821`  
-10. Edit a price or add a service, restart the application, and confirm the catalog did not revert
+8. In Application Manager, set environment variables if the host gives you a persistent volume:
+   - `DATA_DIR` = that volume path (example: `/home/USER/premium-store-qatar-data`)
+   - Optional: `DATABASE_PATH` = `$DATA_DIR/globalstore.db`
+9. Republish / restart the application  
+10. Visit `https://YOUR-DOMAIN/api/health` — JSON must include `ok: true`, `dataDir` outside the app folder, and `catalogSeededThisBoot`  
+11. Sign in with `admin` / `Go$StQ821`, rename a service, then **Restart Published App**. Confirm `/api/services` still has the new name (`catalogSeededThisBoot` should be `false`).
 
 Do **not** FTP only `client/dist` into `public_html`. That is static hosting and `/api/health` will 404.
 
@@ -90,7 +92,7 @@ If the website and API use different URLs, edit `client/public/runtime-config.js
 window.__GLOBALSTORE_CONFIG__ = { apiUrl: "https://your-node-api-url" };
 ```
 
-Keep `server/data/` on a persistent disk so SQLite and uploads survive restarts.
+If `DATA_DIR` is not set, the API stores SQLite and snapshots in **`~/premium-store-qatar-data/`** (home directory, not the deploy tree). On first start it copies `server/data` into that folder when the durable store is empty. Restart Published App typically resets the app directory and would wipe `server/data`; the home-dir (or `DATA_DIR`) copy is what survives.
 
 ### Complaint email
 

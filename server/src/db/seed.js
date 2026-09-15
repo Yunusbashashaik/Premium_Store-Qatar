@@ -31,6 +31,18 @@ bindPersist({
   getServiceImageBlob,
 });
 
+let lastSeedResult = {
+  servicesSeeded: false,
+  settingsSeeded: false,
+  catalogSeededThisBoot: false,
+  hydrated: { restored: false },
+  catalogReset: false,
+};
+
+export function getLastSeedResult() {
+  return lastSeedResult;
+}
+
 function seedDefaultCatalogIfEmpty() {
   if (countServices() > 0) {
     setSetting("catalogSeeded", true);
@@ -63,10 +75,12 @@ export function seedDatabase() {
   const servicesSeeded = seedDefaultCatalogIfEmpty();
   persistAdminState();
 
-  return {
+  lastSeedResult = {
     servicesSeeded,
     settingsSeeded,
+    catalogSeededThisBoot: servicesSeeded,
     hydrated,
     catalogReset: false,
   };
+  return lastSeedResult;
 }
