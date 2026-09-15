@@ -281,4 +281,67 @@ describe("services + admin API", () => {
     const del = await request(app).delete("/api/admin/services/missing-id");
     assert.equal(del.status, 401);
   });
+
+  it("creates an optional offer and hides it from public after expiry", async () => {
+    const none = await request(app)
+      .post("/api/admin/services")
+      .set("Authorization", `Bearer ${token}`)
+      .field("nameEn", "Regular Add")
+      .field("nameAr", "عادي")
+      .field("descriptionEn", "EN")
+      .field("descriptionAr", "AR")
+      .field("priceMonth", "1")
+      .field("priceYear", "8")
+      .field("offerType", "none");
+    assert.equal(none.status, 201);
+    assert.equal(none.body.service.offerType, "none");
+    assert.equal(none.body.service.offerExpiresAt, null);
+
+    const expired = await request(app)
+      .post("/api/admin/services")
+      .set("Authorization", `Bearer ${token}`)
+      .field("nameEn", "Expired Eid")
+      .field("nameAr", "عيد")
+      .field("descriptionEn", "EN")
+      .field("descriptionAr", "AR")
+      .field("priceMonth", "1")
+      .field("priceYear", "8")
+      .field("offerType", "eid")
+      .field("offerExpiresAt", new Date(Date.now() - 5000).toISOString());
+    assert.equal(expired.status, 201);
+    assert.equal(expired.body.service.offerType, "eid");
+
+    const active = await request(app)
+      .post("/api/admin/services")
+      .set("Authorization", `Bearer ${token}`)
+      .field("nameEn", "Active Special")
+      .field("nameAr", "خاص")
+      .field("descriptionEn", "EN")
+      .field("descriptionAr", "AR")
+      .field("priceMonth", "2")
+      .field("priceYear", "9")
+      .field("offerType", "special")
+      .field("offerExpiresAt", new Date(Date.now() + 60_000).toISOString());
+    assert.equal(active.status, 201);
+    assert.equal(active.body.service.offerType, "special");
+    assert.ok(active.body.service.offerExpiresAt);
+
+    const publicList = await request(app).get("/api/services");
+    const adminList = await request(app)
+      .get("/api/admin/services")
+      .set("Authorization", `Bearer ${token}`);
+    const publicNames = publicList.body.services.map((s) => s.nameEn);
+    assert.equal(publicNames.includes("Expired Eid"), false);
+    assert.equal(publicNames.includes("Active Special"), true);
+    assert.equal(publicNames.includes("Regular Add"), true);
+    const publicActive = publicList.body.services.find((s) => s.nameEn === "Active Special");
+    assert.equal(publicActive.offerType, "special");
+    assert.ok(publicActive.offerExpiresAt);
+    const publicRegular = publicList.body.services.find((s) => s.nameEn === "Regular Add");
+    assert.equal(publicRegular.offerType, "none");
+    assert.equal(
+      adminList.body.services.some((s) => s.nameEn === "Expired Eid"),
+      true,
+    );
+  });
 });

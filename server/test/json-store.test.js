@@ -39,6 +39,7 @@ describe("JSON file database fallback", () => {
       prices: { month: 2, year: 9 },
     });
     assert.equal(created.nameEn, "JSON Service");
+    assert.equal(created.offerType, "none");
     const listed = listServices();
     assert.ok(listed.some((s) => s.id === "json-test-service"));
     assert.equal(listed[0].id, "json-test-service");

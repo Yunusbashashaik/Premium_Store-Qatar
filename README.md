@@ -48,8 +48,8 @@ Default data directory is **`~/premium-store-qatar-data/`** (outside the applica
 
 Click the **Admin** icon in the header. After login the dashboard includes:
 
-- **Add Services** (JPEG, name EN/AR, description EN/AR, month/year prices)
-- **Edit Services** (partial updates: image, prices, names, descriptions, or mix)
+- **Add Services** (JPEG, name EN/AR, description EN/AR, month/year prices; optional Eid/Special offer + expiry)
+- **Edit Services** (partial updates: image, prices, names, descriptions, offer, or mix)
 - **Complaint Email ID**
 - **Contact Details** (WhatsApp)
 - **About Us** / social links
@@ -57,6 +57,8 @@ Click the **Admin** icon in the header. After login the dashboard includes:
 Default credentials: `admin` / `Go$StQ821` (override with `ADMIN_USERNAME` / `ADMIN_PASSWORD`).
 
 Out-of-stock services use price `0`, show an **Out of Stock** note, and disable Add to Cart.
+
+Optional **Eid Offer** / **Special Offer** on Add or Edit is off by default. Active offers replace the Out of Stock badge with a bilingual countdown. When the expiry time is reached, that service leaves the public store (`GET /api/services`) but remains in Admin.
 
 ### Deploy on GoDaddy (Node.js)
 
