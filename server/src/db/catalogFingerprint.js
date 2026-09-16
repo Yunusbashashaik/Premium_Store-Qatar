@@ -25,6 +25,28 @@ export function catalogMatchesDefaults(services) {
   return catalogSignature(services) === catalogSignature(DEFAULT_SERVICES);
 }
 
+export function rowsToFingerprintServices(rows) {
+  return (rows || []).map((row) => ({
+    id: row.id,
+    nameEn: row.nameEn ?? row.name_en ?? "",
+    nameAr: row.nameAr ?? row.name_ar ?? "",
+    descriptionEn: row.descriptionEn ?? row.description_en ?? "",
+    descriptionAr: row.descriptionAr ?? row.description_ar ?? "",
+    prices: {
+      month: Number(row.prices?.month ?? row.price_month ?? 0),
+      year: Number(row.prices?.year ?? row.price_year ?? 0),
+    },
+    outOfStock: Boolean(row.outOfStock ?? row.out_of_stock),
+  }));
+}
+
+export function snapshotLooksInitialized(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return false;
+  if (Array.isArray(snapshot.services) && snapshot.services.length > 0) return true;
+  const settings = snapshot.settings && typeof snapshot.settings === "object" ? snapshot.settings : {};
+  return settings.catalogSeeded === true;
+}
+
 export function settingsSignature(settings) {
   const value = settings || {};
   return JSON.stringify({

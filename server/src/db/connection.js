@@ -3,7 +3,11 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { catalogMatchesDefaults, rankSnapshot } from "./catalogFingerprint.js";
+import {
+  catalogMatchesDefaults,
+  rankSnapshot,
+  rowsToFingerprintServices,
+} from "./catalogFingerprint.js";
 import {
   DEFAULT_DURABLE_DIRNAME,
   extraDurableReplicationEnabled,
@@ -109,6 +113,40 @@ function readSnapshotFromDir(dir) {
   }
 }
 
+function readStoreServices(dir) {
+  const jsonPath = path.join(dir, "globalstore.json");
+  if (fs.existsSync(jsonPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+      if (Array.isArray(parsed?.services) && parsed.services.length) {
+        return rowsToFingerprintServices(parsed.services);
+      }
+    } catch {
+      /* unreadable json store */
+    }
+  }
+  const dbPath = path.join(dir, "globalstore.db");
+  if (!fs.existsSync(dbPath)) return [];
+  try {
+    const Database = require("better-sqlite3");
+    const sqlite = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+      const rows = sqlite
+        .prepare(
+          `SELECT id, name_en, name_ar, description_en, description_ar,
+                  price_month, price_year, out_of_stock
+           FROM services`,
+        )
+        .all();
+      return rowsToFingerprintServices(rows);
+    } finally {
+      sqlite.close();
+    }
+  } catch {
+    return [];
+  }
+}
+
 export function inspectDurableDir(dir) {
   if (!dir || !fs.existsSync(dir)) return null;
   const resolved = path.resolve(dir);
@@ -128,20 +166,24 @@ export function inspectDurableDir(dir) {
       /* missing artifact */
     }
   }
-  const rank = rankSnapshot(snapshot, snapshotMtime || storeMtime);
-  let score = rank.score;
-  const services = Array.isArray(snapshot?.services) ? snapshot.services : [];
+  const snapshotServices = Array.isArray(snapshot?.services) ? snapshot.services : [];
+  const storeServices = readStoreServices(resolved);
+  const snapshotRank = rankSnapshot(snapshot, snapshotMtime || storeMtime);
+  const storeRank = rankSnapshot(
+    storeServices.length ? { services: storeServices } : null,
+    storeMtime,
+  );
+  const useStore = storeRank.score > snapshotRank.score;
+  const services = useStore ? storeServices : snapshotServices;
+  const rank = useStore ? storeRank : snapshotRank;
   const nonDefault = services.length > 0 && !catalogMatchesDefaults(services);
-  if (!snapshot && hasStore) {
-    score = 1e9 + storeMtime;
-  }
   if (!hasStore && !snapshot) return null;
   return {
     dir: resolved,
     snapshot,
     hasStore,
     nonDefault,
-    score,
+    score: rank.score,
   };
 }
 

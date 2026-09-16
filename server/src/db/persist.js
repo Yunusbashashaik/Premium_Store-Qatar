@@ -11,6 +11,7 @@ import {
   rankSnapshot,
   settingsMatchDefaults,
   settingsSignature,
+  snapshotLooksInitialized,
 } from "./catalogFingerprint.js";
 import {
   extraDurableReplicationEnabled,
@@ -23,6 +24,7 @@ export {
   catalogMatchesDefaults,
   catalogSignature,
   settingsMatchDefaults,
+  snapshotLooksInitialized,
 } from "./catalogFingerprint.js";
 
 /** Snapshot format version. Never used to wipe or replace a live catalog. */
@@ -86,6 +88,8 @@ function serializeServices() {
     delete rest.imageSrc;
     return {
       ...rest,
+      offerType: service.offerType || "none",
+      offerExpiresAt: service.offerExpiresAt || null,
       imageBase64:
         blob && blob.length ? Buffer.from(blob).toString("base64") : undefined,
     };
@@ -102,6 +106,12 @@ function existingSnapshotIsCustom(filePath) {
   }
 }
 
+function shouldRefuseSnapshotOverwrite(filePath, incomingServices) {
+  if (!existingSnapshotIsCustom(filePath)) return false;
+  if (!Array.isArray(incomingServices) || incomingServices.length === 0) return true;
+  return catalogMatchesDefaults(incomingServices);
+}
+
 export function writeAdminSnapshot(state) {
   if (!state) return null;
   const payload = {
@@ -111,31 +121,45 @@ export function writeAdminSnapshot(state) {
     services: Array.isArray(state.services) ? state.services : [],
     settings: state.settings && typeof state.settings === "object" ? state.settings : {},
   };
-  const incomingIsDefault = catalogMatchesDefaults(payload.services);
   const body = `${JSON.stringify(payload, null, 2)}\n`;
+  const written = [];
+  const skipped = [];
   for (const filePath of getSnapshotWritePaths()) {
     try {
-      if (incomingIsDefault && existingSnapshotIsCustom(filePath)) {
+      if (shouldRefuseSnapshotOverwrite(filePath, payload.services)) {
         console.error(
-          "Refusing to overwrite custom admin snapshot with factory catalog",
+          "Refusing to overwrite custom admin snapshot with factory/empty catalog",
           filePath,
         );
+        skipped.push(filePath);
         continue;
       }
       atomicWrite(filePath, body);
+      written.push(filePath);
     } catch (err) {
       console.error("Failed to write admin snapshot", filePath, err?.message || err);
     }
   }
+  lastSnapshotChoice = {
+    ...lastSnapshotChoice,
+    lastWritePaths: written,
+    lastSkippedPaths: skipped,
+  };
   return payload;
 }
 
 export function persistAdminState() {
   if (persistDisabled || !source) return null;
   try {
+    const catalogSeeded =
+      source.getSetting?.("catalogSeeded") === true ||
+      (source.countServices?.() || 0) > 0;
     return writeAdminSnapshot({
       services: serializeServices(),
-      settings: source.getAllSettings(),
+      settings: {
+        ...source.getAllSettings(),
+        catalogSeeded,
+      },
     });
   } catch (err) {
     console.error("Failed to persist admin state", err?.message || err);
@@ -202,6 +226,15 @@ export function readAdminSnapshot() {
 
 export function getLastSnapshotChoice() {
   return lastSnapshotChoice;
+}
+
+export function catalogWasInitialized() {
+  if (source?.getSetting?.("catalogSeeded") === true) return true;
+  if ((source?.countServices?.() || 0) > 0) return true;
+  for (const entry of listReadableSnapshots()) {
+    if (snapshotLooksInitialized(entry.snapshot)) return true;
+  }
+  return false;
 }
 
 export function hydratePersistedAdminState() {
@@ -276,8 +309,12 @@ export function getPersistStatus() {
     snapshotSavedAt: snapshot?.savedAt || null,
     snapshotServices: Array.isArray(snapshot?.services) ? snapshot.services.length : 0,
     snapshotPaths: getSnapshotPaths(),
+    snapshotWritePaths: getSnapshotWritePaths(),
     snapshotPath: lastSnapshotChoice.path,
     snapshotChoice: lastSnapshotChoice.reason,
-    catalogMatchesDefaults: catalogMatchesDefaults(snapshot?.services || []),
+    snapshotCatalogMatchesDefaults: catalogMatchesDefaults(snapshot?.services || []),
+    lastWritePaths: lastSnapshotChoice.lastWritePaths || [],
+    lastSkippedPaths: lastSnapshotChoice.lastSkippedPaths || [],
+    backupDirs: extraDurableReplicationEnabled(getDataDir()) ? getDurableBackupDirs() : [],
   };
 }
