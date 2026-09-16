@@ -3,6 +3,14 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
+import { catalogMatchesDefaults, rankSnapshot } from "./catalogFingerprint.js";
+import {
+  DEFAULT_DURABLE_DIRNAME,
+  extraDurableReplicationEnabled,
+  getDurableBackupDirs,
+  SNAPSHOT_NAME,
+  STORE_NAMES,
+} from "./durablePaths.js";
 import { JsonDatabase } from "./jsonDb.js";
 
 const require = createRequire(import.meta.url);
@@ -10,13 +18,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** In-app folder used by older deploys. Wiped by GoDaddy Restart Published App. */
 export const LEGACY_APP_DATA_DIR = path.join(__dirname, "..", "..", "data");
-export const DEFAULT_DURABLE_DIRNAME = "premium-store-qatar-data";
+export { DEFAULT_DURABLE_DIRNAME };
 
 export let DATA_DIR = LEGACY_APP_DATA_DIR;
 export let UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 export let SERVICE_UPLOADS_DIR = path.join(UPLOADS_DIR, "services");
 
-const STORE_NAMES = ["globalstore.db", "globalstore.json", "admin-state.json"];
+export { STORE_NAMES, SNAPSHOT_NAME };
 
 const SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS services (
@@ -63,6 +71,7 @@ let db;
 let activeDbPath;
 let dbEngine = "none";
 let lastMigration = { migrated: false, reason: "not-run" };
+let lastRecovery = { recovered: false, reason: "not-run" };
 
 export function getDefaultDurableDataDir() {
   return path.resolve(
@@ -84,6 +93,131 @@ export function getServiceUploadsDir() {
 
 export function getLastMigration() {
   return lastMigration;
+}
+
+export function getLastRecovery() {
+  return lastRecovery;
+}
+
+function readSnapshotFromDir(dir) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(dir, SNAPSHOT_NAME), "utf8"));
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function inspectDurableDir(dir) {
+  if (!dir || !fs.existsSync(dir)) return null;
+  const resolved = path.resolve(dir);
+  const snapshot = readSnapshotFromDir(resolved);
+  let snapshotMtime = 0;
+  try {
+    snapshotMtime = fs.statSync(path.join(resolved, SNAPSHOT_NAME)).mtimeMs;
+  } catch {
+    /* missing snapshot */
+  }
+  const hasStore = storeArtifactsPresent(resolved);
+  let storeMtime = 0;
+  for (const name of STORE_NAMES) {
+    try {
+      storeMtime = Math.max(storeMtime, fs.statSync(path.join(resolved, name)).mtimeMs);
+    } catch {
+      /* missing artifact */
+    }
+  }
+  const rank = rankSnapshot(snapshot, snapshotMtime || storeMtime);
+  let score = rank.score;
+  const services = Array.isArray(snapshot?.services) ? snapshot.services : [];
+  const nonDefault = services.length > 0 && !catalogMatchesDefaults(services);
+  if (!snapshot && hasStore) {
+    score = 1e9 + storeMtime;
+  }
+  if (!hasStore && !snapshot) return null;
+  return {
+    dir: resolved,
+    snapshot,
+    hasStore,
+    nonDefault,
+    score,
+  };
+}
+
+export function pickBestDurableSource(dirs) {
+  let best = null;
+  for (const dir of dirs || []) {
+    const info = inspectDurableDir(dir);
+    if (!info) continue;
+    if (!best || info.score > best.score) best = info;
+  }
+  return best;
+}
+
+function uniqueDirs(dirs) {
+  const seen = new Set();
+  const out = [];
+  for (const dir of dirs || []) {
+    if (!dir) continue;
+    const resolved = path.resolve(dir);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    out.push(resolved);
+  }
+  return out;
+}
+
+export function recoverFromBackupDirs(targetDir, backupDirs = []) {
+  const target = path.resolve(targetDir);
+  const candidates = uniqueDirs([target, ...backupDirs]);
+  const best = pickBestDurableSource(candidates);
+  const targetInfo = inspectDurableDir(target);
+
+  if (!best) {
+    lastRecovery = { recovered: false, reason: "no-source", to: target };
+    return lastRecovery;
+  }
+  if (best.dir === target) {
+    lastRecovery = {
+      recovered: false,
+      reason: "target-is-best",
+      from: best.dir,
+      to: target,
+      nonDefault: best.nonDefault,
+    };
+    return lastRecovery;
+  }
+  if (targetInfo?.nonDefault) {
+    lastRecovery = {
+      recovered: false,
+      reason: "target-has-custom",
+      from: best.dir,
+      to: target,
+    };
+    return lastRecovery;
+  }
+  if (!best.nonDefault && targetInfo?.hasStore) {
+    lastRecovery = {
+      recovered: false,
+      reason: "best-is-default",
+      from: best.dir,
+      to: target,
+    };
+    return lastRecovery;
+  }
+
+  fs.mkdirSync(target, { recursive: true });
+  fs.cpSync(best.dir, target, { recursive: true });
+  lastRecovery = {
+    recovered: true,
+    reason: "copied-best",
+    from: best.dir,
+    to: target,
+    nonDefault: best.nonDefault,
+  };
+  console.log(`Recovered store data from ${best.dir} to ${target}`);
+  return lastRecovery;
 }
 
 function applyDataDir(dir) {
@@ -182,6 +316,14 @@ export function initDatabase(dbPath, options = {}) {
     migrateLegacyDataIfNeeded(resolvedDir, options.legacyDataDir || LEGACY_APP_DATA_DIR);
   } else {
     lastMigration = { migrated: false, reason: explicitStore ? "explicit-store" : "skipped" };
+  }
+  if (explicitStore) {
+    lastRecovery = { recovered: false, reason: "explicit-store" };
+  } else {
+    const backups =
+      options.backupDirs ||
+      (extraDurableReplicationEnabled(resolvedDir) ? getDurableBackupDirs() : []);
+    recoverFromBackupDirs(resolvedDir, backups);
   }
   applyDataDir(resolvedDir);
 

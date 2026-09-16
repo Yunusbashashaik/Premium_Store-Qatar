@@ -1,6 +1,7 @@
 import { DEFAULT_SERVICES } from "../config/defaultServices.js";
 import {
   bindPersist,
+  findNonDefaultAdminSnapshot,
   hydratePersistedAdminState,
   persistAdminState,
   withoutPersist,
@@ -54,6 +55,15 @@ function seedDefaultCatalogIfEmpty() {
     return false;
   }
 
+  const customSnapshot = findNonDefaultAdminSnapshot();
+  if (customSnapshot) {
+    console.error(
+      "Skipping factory catalog seed; custom admin snapshot exists at",
+      customSnapshot.path,
+    );
+    return false;
+  }
+
   withoutPersist(() => {
     DEFAULT_SERVICES.forEach((service, index) => {
       insertService(
@@ -73,7 +83,12 @@ export function seedDatabase() {
   const settingsSeeded = withoutPersist(() => seedSettingsIfEmpty());
   const hydrated = hydratePersistedAdminState();
   const servicesSeeded = seedDefaultCatalogIfEmpty();
-  persistAdminState();
+  if (servicesSeeded && findNonDefaultAdminSnapshot()) {
+    // Factory rows stay in-memory/DB for this empty volume, but must not clobber a custom replica.
+    console.error("Factory seed completed; custom snapshot replicas left unchanged.");
+  } else {
+    persistAdminState();
+  }
 
   lastSeedResult = {
     servicesSeeded,
