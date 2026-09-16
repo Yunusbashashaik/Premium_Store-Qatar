@@ -25,7 +25,7 @@ Vite proxies `/api` to port **3001** during development. For production-style se
 
 The storefront list comes from **`GET /api/services`** (SQLite). `client/src/data/servicesCatalog.js` is used **only as a first-time seed** when the durable catalog is empty. Seed/startup never wipes or overwrites existing services.
 
-Site settings, complaints, and the catalog persist under **`~/premium-store-qatar-data/`** by default (outside the app package so GoDaddy Restart Published App does not wipe them). Override with `DATA_DIR` and/or `DATABASE_PATH`. On first boot, existing `server/data` is copied into that durable folder if the target is empty.
+Site settings, complaints, and the catalog persist under **`~/premium-store-qatar-data/`** by default (outside the app package so GoDaddy Restart Published App does not wipe them). Override with `DATA_DIR` and/or `DATABASE_PATH`. Snapshots replicate to `/local/<dirname>`, `/root/<dirname>`, and `$HOME/<dirname>` when writable. On boot the API restores the best backup (custom catalog over factory defaults) into the active dir, hydrates, and factory-seeds **only on true first boot**. After `catalogSeeded` or a custom snapshot exists, an empty store is **never** filled with `DEFAULT_SERVICES`, and factory/empty snapshots never overwrite a custom `admin-state.json`. On first boot, existing `server/data` is copied into that durable folder if the target is empty.
 
 ### Complaint email
 

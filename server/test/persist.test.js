@@ -8,9 +8,16 @@ import {
   closeDatabase,
   getDataDir,
   getLastMigration,
+  getLastRecovery,
   initDatabase,
 } from "../src/db/connection.js";
-import { readAdminSnapshot, withoutPersist } from "../src/db/persist.js";
+import { SNAPSHOT_NAME } from "../src/db/durablePaths.js";
+import {
+  catalogMatchesDefaults,
+  readAdminSnapshot,
+  withoutPersist,
+  writeAdminSnapshot,
+} from "../src/db/persist.js";
 import { getHealthPayload } from "../src/health.js";
 import { seedDatabase } from "../src/db/seed.js";
 import {
@@ -30,8 +37,35 @@ function sqliteFiles(dbPath) {
   return [dbPath, `${dbPath}-wal`, `${dbPath}-shm`];
 }
 
+function writeSnapshot(dir, payload) {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, SNAPSHOT_NAME),
+    `${JSON.stringify(
+      {
+        version: 1,
+        generation: 5,
+        savedAt: payload.savedAt || new Date().toISOString(),
+        services: payload.services,
+        settings: payload.settings || {},
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
+function customCatalog(nameEn = "YouTube Premium") {
+  return DEFAULT_SERVICES.map((service) =>
+    service.id === "youtube-premium-personal"
+      ? { ...service, nameEn }
+      : service,
+  );
+}
+
 afterEach(() => {
   closeDatabase();
+  delete process.env.DURABLE_BACKUP_DIRS;
 });
 
 describe("admin catalog persistence", () => {
@@ -319,5 +353,129 @@ describe("admin catalog persistence", () => {
 
     closeDatabase();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("restores a custom catalog from a backup path without reseeding defaults", () => {
+    const active = tempDir();
+    const backup = tempDir();
+    const prevDataDir = process.env.DATA_DIR;
+    process.env.DATA_DIR = active;
+    process.env.DURABLE_BACKUP_DIRS = backup;
+    try {
+      writeSnapshot(backup, {
+        savedAt: "2026-01-01T00:00:00.000Z",
+        services: customCatalog("YouTube Premium"),
+        settings: { complaintEmail: "kept@example.com" },
+      });
+
+      initDatabase(undefined, { skipMigrate: true });
+      const recovered = getLastRecovery();
+      assert.equal(recovered.recovered, true);
+      assert.equal(recovered.reason, "copied-best");
+      assert.equal(recovered.from, path.resolve(backup));
+
+      const seeded = seedDatabase();
+      assert.equal(seeded.catalogSeededThisBoot, false);
+      assert.equal(seeded.servicesSeeded, false);
+      assert.equal(seeded.hydrated.restoredServices, true);
+      assert.equal(
+        listServices().find((s) => s.id === "youtube-premium-personal").nameEn,
+        "YouTube Premium",
+      );
+      assert.equal(catalogMatchesDefaults(listServices()), false);
+
+      const health = getHealthPayload();
+      assert.equal(health.catalogSeededThisBoot, false);
+      assert.equal(health.catalogMatchesDefaults, false);
+      assert.ok(health.hydrateReason);
+      assert.ok(Array.isArray(health.snapshotPaths));
+      assert.equal(health.dataDir, path.resolve(active));
+      assert.equal(getAllSettings().complaintEmail, "kept@example.com");
+    } finally {
+      closeDatabase();
+      if (prevDataDir === undefined) delete process.env.DATA_DIR;
+      else process.env.DATA_DIR = prevDataDir;
+      fs.rmSync(active, { recursive: true, force: true });
+      fs.rmSync(backup, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers an older custom snapshot over a newer factory snapshot", () => {
+    const active = tempDir();
+    const backup = tempDir();
+    const prevDataDir = process.env.DATA_DIR;
+    process.env.DATA_DIR = active;
+    process.env.DURABLE_BACKUP_DIRS = backup;
+    try {
+      writeSnapshot(active, {
+        savedAt: "2026-09-15T21:47:00.000Z",
+        services: DEFAULT_SERVICES,
+      });
+      writeSnapshot(backup, {
+        savedAt: "2026-01-02T00:00:00.000Z",
+        services: customCatalog("YouTube Premium"),
+      });
+
+      initDatabase(undefined, { skipMigrate: true, backupDirs: [] });
+      const seeded = seedDatabase();
+      assert.equal(seeded.catalogSeededThisBoot, false);
+      assert.equal(seeded.hydrated.restoredServices, true);
+      assert.equal(
+        listServices().find((s) => s.id === "youtube-premium-personal").nameEn,
+        "YouTube Premium",
+      );
+      assert.equal(getHealthPayload().catalogMatchesDefaults, false);
+    } finally {
+      closeDatabase();
+      if (prevDataDir === undefined) delete process.env.DATA_DIR;
+      else process.env.DATA_DIR = prevDataDir;
+      fs.rmSync(active, { recursive: true, force: true });
+      fs.rmSync(backup, { recursive: true, force: true });
+    }
+  });
+
+  it("does not overwrite a custom admin-state.json with a factory-seeded catalog", () => {
+    const active = tempDir();
+    const backup = tempDir();
+    const prevDataDir = process.env.DATA_DIR;
+    process.env.DATA_DIR = active;
+    process.env.DURABLE_BACKUP_DIRS = backup;
+    try {
+      writeSnapshot(backup, {
+        savedAt: "2026-03-01T00:00:00.000Z",
+        services: customCatalog("YouTube Premium"),
+      });
+      initDatabase(undefined, { skipMigrate: true, backupDirs: [] });
+
+      const written = writeAdminSnapshot({
+        services: DEFAULT_SERVICES,
+        settings: {},
+      });
+      assert.ok(written);
+      assert.equal(catalogMatchesDefaults(written.services), true);
+
+      const backupSnap = JSON.parse(
+        fs.readFileSync(path.join(backup, SNAPSHOT_NAME), "utf8"),
+      );
+      assert.equal(
+        backupSnap.services.find((s) => s.id === "youtube-premium-personal").nameEn,
+        "YouTube Premium",
+      );
+      assert.equal(catalogMatchesDefaults(backupSnap.services), false);
+
+      const seeded = seedDatabase();
+      assert.equal(seeded.catalogSeededThisBoot, false);
+      assert.equal(
+        JSON.parse(fs.readFileSync(path.join(backup, SNAPSHOT_NAME), "utf8"))
+          .services.find((s) => s.id === "youtube-premium-personal").nameEn,
+        "YouTube Premium",
+      );
+    } finally {
+      closeDatabase();
+      if (prevDataDir === undefined) delete process.env.DATA_DIR;
+      else process.env.DATA_DIR = prevDataDir;
+      fs.rmSync(active, { recursive: true, force: true });
+      fs.rmSync(backup, { recursive: true, force: true });
+    }
   });
 });
