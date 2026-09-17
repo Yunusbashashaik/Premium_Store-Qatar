@@ -3,10 +3,12 @@ import { afterEach, describe, it } from "node:test";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { fileURLToPath } from "url";
 import { DEFAULT_SERVICES } from "../src/config/defaultServices.js";
 import { closeDatabase, initDatabase } from "../src/db/connection.js";
 import {
   flushOffHostBackup,
+  getDefaultCatalogBackupUrl,
   resetOffHostBackupStatus,
   setOffHostFetch,
 } from "../src/db/offHostBackup.js";
@@ -70,6 +72,8 @@ afterEach(async () => {
   delete process.env.CATALOG_BACKUP_URL;
   delete process.env.CATALOG_BACKUP_REPO;
   delete process.env.CATALOG_BACKUP_ENABLED;
+  delete process.env.CATALOG_BACKUP_PATH;
+  delete process.env.CATALOG_BACKUP_SKIP_PACKAGED;
   delete process.env.DURABLE_BACKUP_DIRS;
   delete process.env.DATA_DIR;
 });
@@ -152,6 +156,67 @@ describe("off-host catalog backup", () => {
     assert.equal(restored.catalogSeededThisBoot, false);
     assert.equal(listServices().find((s) => s.id === "youtube-premium-personal").nameEn, "YouTube Premium");
     assert.equal(getHealthPayload().offHostBackupRestoredThisBoot, true);
+    fs.rmSync(localDir, { recursive: true, force: true });
+  });
+
+  it("restores committed catalog-backup via default raw URL without a token or factory seed", async () => {
+    const localDir = tempDir();
+    process.env.DATA_DIR = localDir;
+    process.env.DURABLE_BACKUP_DIRS = localDir;
+    process.env.CATALOG_BACKUP_SKIP_PACKAGED = "1";
+    disableFactorySeed();
+
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const snapshot = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, "catalog-backup", "admin-state.json"), "utf8"),
+    );
+    assert.ok(snapshot.services.length > 0);
+    assert.equal(snapshot.version, 1);
+    assert.equal(snapshot.generation, 5);
+    assert.ok(snapshot.services.every((service) => service.offerType));
+
+    setOffHostFetch(async (url) => {
+      assert.equal(String(url), getDefaultCatalogBackupUrl());
+      return jsonResponse(200, snapshot);
+    });
+
+    initDatabase();
+    const seeded = await seedDatabase();
+    assert.equal(seeded.catalogSeededThisBoot, false);
+    assert.equal(seeded.offHost.restored, true);
+    assert.ok(listServices().length > 0);
+    assert.equal(listServices().length, snapshot.services.length);
+    assert.equal(catalogMatchesDefaults(listServices()), true);
+
+    const health = getHealthPayload();
+    assert.equal(health.factorySeedDisabled, true);
+    assert.equal(health.offHostBackupConfigured, true);
+    assert.equal(health.offHostBackupRestoredThisBoot, true);
+    assert.equal(health.catalogSeededThisBoot, false);
+    assert.equal(health.catalogEmpty, false);
+    assert.equal(health.hydrateReason, "off-host");
+    fs.rmSync(localDir, { recursive: true, force: true });
+  });
+
+  it("restores committed catalog-backup from the packaged path without a token", async () => {
+    const localDir = tempDir();
+    process.env.DATA_DIR = localDir;
+    process.env.DURABLE_BACKUP_DIRS = localDir;
+    disableFactorySeed();
+    setOffHostFetch(async () => jsonResponse(404, { message: "Not Found" }));
+
+    initDatabase();
+    const seeded = await seedDatabase();
+    assert.equal(seeded.catalogSeededThisBoot, false);
+    assert.equal(seeded.offHost.restored, true);
+    assert.equal(seeded.offHost.source, "packaged");
+    assert.ok(listServices().length > 0);
+    assert.equal(listServices().length, DEFAULT_SERVICES.length);
+
+    const health = getHealthPayload();
+    assert.equal(health.offHostBackupConfigured, true);
+    assert.equal(health.offHostBackupRestoredThisBoot, true);
+    assert.equal(health.catalogSeededThisBoot, false);
     fs.rmSync(localDir, { recursive: true, force: true });
   });
 });

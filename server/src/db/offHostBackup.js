@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { catalogMatchesDefaults } from "./catalogFingerprint.js";
 import { isFactorySeedAllowed } from "./factorySeed.js";
 import {
@@ -7,9 +8,11 @@ import {
   SNAPSHOT_NAME,
 } from "./durablePaths.js";
 
-const DEFAULT_REPO = "Yunusbashashaik/Premium_Store-Qatar";
-const DEFAULT_PATH = "catalog-backup/admin-state.json";
+export const DEFAULT_BACKUP_REPO = "Yunusbashashaik/Premium_Store-Qatar";
+export const DEFAULT_BACKUP_PATH = "catalog-backup/admin-state.json";
+export const DEFAULT_BACKUP_BRANCH = "main";
 const API_VERSION = "2022-11-28";
+const MODULE_REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 let fetchImpl = (...args) => globalThis.fetch(...args);
 let saveChain = Promise.resolve();
@@ -39,18 +42,52 @@ export function resetOffHostBackupStatus() {
   saveChain = Promise.resolve();
 }
 
+export function getDefaultCatalogBackupUrl(
+  repo = DEFAULT_BACKUP_REPO,
+  filePath = DEFAULT_BACKUP_PATH,
+  branch = DEFAULT_BACKUP_BRANCH,
+) {
+  const encodedPath = String(filePath || DEFAULT_BACKUP_PATH)
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  return `https://raw.githubusercontent.com/${repo || DEFAULT_BACKUP_REPO}/${branch || DEFAULT_BACKUP_BRANCH}/${encodedPath}`;
+}
+
 export function getOffHostBackupConfig() {
   const catalogToken = String(process.env.CATALOG_BACKUP_TOKEN || "").trim();
   const githubToken = String(process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "").trim();
   const enabled = process.env.CATALOG_BACKUP_ENABLED === "1";
   const repoEnv = String(process.env.CATALOG_BACKUP_REPO || "").trim();
-  const repo = repoEnv || DEFAULT_REPO;
-  const filePath = String(process.env.CATALOG_BACKUP_PATH || DEFAULT_PATH).trim();
-  const branch = String(process.env.CATALOG_BACKUP_BRANCH || "").trim();
-  const url = String(process.env.CATALOG_BACKUP_URL || "").trim();
+  const repo = repoEnv || DEFAULT_BACKUP_REPO;
+  const filePath = String(process.env.CATALOG_BACKUP_PATH || DEFAULT_BACKUP_PATH).trim() || DEFAULT_BACKUP_PATH;
+  const branch = String(process.env.CATALOG_BACKUP_BRANCH || "").trim() || DEFAULT_BACKUP_BRANCH;
+  const urlEnv = String(process.env.CATALOG_BACKUP_URL || "").trim();
+  const defaultUrl = getDefaultCatalogBackupUrl(repo, DEFAULT_BACKUP_PATH, branch);
+  const url = urlEnv || defaultUrl;
   const token = catalogToken || ((enabled || repoEnv) ? githubToken : "");
-  const configured = Boolean(token || url);
-  return { token, repo, filePath, branch, url, configured };
+  const skipPackaged = process.env.CATALOG_BACKUP_SKIP_PACKAGED === "1";
+  const packagedPaths = skipPackaged ? [] : listPackagedBackupPaths(filePath);
+  const packagedAvailable = packagedPaths.some((file) => {
+    try {
+      return fs.existsSync(file);
+    } catch {
+      return false;
+    }
+  });
+  const configured = Boolean(token || url || packagedAvailable);
+  return {
+    token,
+    repo,
+    filePath,
+    branch,
+    url,
+    urlEnv: urlEnv || null,
+    defaultUrl,
+    packagedPaths,
+    packagedAvailable,
+    configured,
+  };
 }
 
 export function getOffHostBackupStatus() {
@@ -60,7 +97,8 @@ export function getOffHostBackupStatus() {
     configured: config.configured,
     repo: config.repo,
     path: config.filePath,
-    url: config.url || null,
+    url: config.url || config.defaultUrl || null,
+    defaultUrl: config.defaultUrl,
   };
 }
 
@@ -105,9 +143,62 @@ function decodeGithubContent(payload) {
 
 function snapshotUsableForRestore(snapshot) {
   const services = Array.isArray(snapshot?.services) ? snapshot.services : [];
-  if (!services.length) return false;
-  if (catalogMatchesDefaults(services) && !isFactorySeedAllowed()) return false;
-  return true;
+  return services.length > 0;
+}
+
+function repoRootCandidates() {
+  const roots = [MODULE_REPO_ROOT, process.cwd()];
+  try {
+    const cwdParent = path.resolve(process.cwd(), "..");
+    roots.push(cwdParent);
+  } catch {
+    /* ignore */
+  }
+  const unique = [];
+  const seen = new Set();
+  for (const root of roots) {
+    const resolved = path.resolve(root);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    unique.push(resolved);
+  }
+  return unique;
+}
+
+function siblingBackupPath(filePath) {
+  if (!filePath.endsWith(".json") || filePath.endsWith(".backup.json")) return null;
+  return filePath.replace(/\.json$/, ".backup.json");
+}
+
+function listPackagedBackupPaths(filePath = DEFAULT_BACKUP_PATH) {
+  if (process.env.CATALOG_BACKUP_SKIP_PACKAGED === "1") return [];
+  const relative = [filePath, siblingBackupPath(filePath), DEFAULT_BACKUP_PATH, siblingBackupPath(DEFAULT_BACKUP_PATH)]
+    .filter(Boolean);
+  const paths = [];
+  const seen = new Set();
+  for (const root of repoRootCandidates()) {
+    for (const name of relative) {
+      const full = path.join(root, name);
+      if (seen.has(full)) continue;
+      seen.add(full);
+      paths.push(full);
+    }
+  }
+  return paths;
+}
+
+function readPackagedSnapshot(config) {
+  for (const filePath of listPackagedBackupPaths(config.filePath)) {
+    try {
+      const snapshot = parseSnapshot(JSON.parse(fs.readFileSync(filePath, "utf8")));
+      if (snapshot) {
+        return { snapshot, path: filePath };
+      }
+    } catch {
+      /* missing or unreadable */
+    }
+  }
+  return { snapshot: null, path: null };
 }
 
 async function githubGet(config) {
@@ -159,15 +250,38 @@ export async function fetchOffHostSnapshot() {
     }
   }
 
-  if (config.url) {
+  if (config.urlEnv) {
     try {
-      const snapshot = await fetchFromBackupUrl(config.url);
+      const snapshot = await fetchFromBackupUrl(config.urlEnv);
       if (snapshot) {
         return { snapshot, source: "url", sha: null, reason: "url" };
       }
     } catch (err) {
       lastStatus.lastError = err?.message || String(err);
       console.error("Off-host CATALOG_BACKUP_URL fetch failed", lastStatus.lastError);
+    }
+  }
+
+  const packaged = readPackagedSnapshot(config);
+  if (packaged.snapshot) {
+    return {
+      snapshot: packaged.snapshot,
+      source: "packaged",
+      sha: null,
+      reason: "packaged",
+      path: packaged.path,
+    };
+  }
+
+  if (config.defaultUrl) {
+    try {
+      const snapshot = await fetchFromBackupUrl(config.defaultUrl);
+      if (snapshot) {
+        return { snapshot, source: "url", sha: null, reason: "url" };
+      }
+    } catch (err) {
+      lastStatus.lastError = err?.message || String(err);
+      console.error("Off-host default raw backup fetch failed", lastStatus.lastError);
     }
   }
 
@@ -181,13 +295,34 @@ function atomicWrite(filePath, data) {
   fs.renameSync(tmp, filePath);
 }
 
+function dirHasCustomSnapshot(dir) {
+  for (const name of [SNAPSHOT_NAME, SNAPSHOT_BACKUP_NAME]) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"));
+      const services = Array.isArray(existing?.services) ? existing.services : [];
+      if (services.length > 0 && !catalogMatchesDefaults(services)) return true;
+    } catch {
+      /* missing */
+    }
+  }
+  return false;
+}
+
 export function writeSnapshotPair(dir, snapshot) {
   if (!dir || !snapshot) return [];
+  const incoming = Array.isArray(snapshot.services) ? snapshot.services : [];
+  if (dirHasCustomSnapshot(dir) && (incoming.length === 0 || catalogMatchesDefaults(incoming))) {
+    console.error(
+      "Refusing to overwrite custom admin snapshot with factory/empty off-host catalog",
+      dir,
+    );
+    return [];
+  }
   const payload = {
     version: snapshot.version || 1,
     generation: snapshot.generation || 5,
     savedAt: snapshot.savedAt || new Date().toISOString(),
-    services: Array.isArray(snapshot.services) ? snapshot.services : [],
+    services: incoming,
     settings: snapshot.settings && typeof snapshot.settings === "object" ? snapshot.settings : {},
   };
   const body = `${JSON.stringify(payload, null, 2)}\n`;
@@ -216,6 +351,9 @@ export async function restoreOffHostBackupToDirs(dirs) {
     } catch (err) {
       console.error("Failed to materialize off-host snapshot", dir, err?.message || err);
     }
+  }
+  if (!written.length) {
+    return { restored: false, reason: "off-host-not-materialized", snapshot: fetched.snapshot };
   }
   lastStatus.restoredThisBoot = true;
   lastStatus.restoredSource = fetched.source;

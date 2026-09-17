@@ -11,7 +11,7 @@ import { getHealthPayload } from "../src/health.js";
 import { seedDatabase } from "../src/db/seed.js";
 import { listServices, updateService } from "../src/models/Service.js";
 import { getSetting } from "../src/models/Settings.js";
-import { disableFactorySeed, enableFactorySeed } from "./helpers.js";
+import { disableFactorySeed, enableFactorySeed, isolateOffHostBackup, restoreOffHostBackupEnv } from "./helpers.js";
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "gs-boot-"));
@@ -45,6 +45,7 @@ async function withDurableTrio(fn) {
     else process.env.DURABLE_BACKUP_DIRS = prevBackup;
     if (prevFactory === undefined) delete process.env.ALLOW_FACTORY_SEED;
     else process.env.ALLOW_FACTORY_SEED = prevFactory;
+    restoreOffHostBackupEnv();
     fs.rmSync(localDir, { recursive: true, force: true });
     fs.rmSync(rootDir, { recursive: true, force: true });
     fs.rmSync(homeDir, { recursive: true, force: true });
@@ -55,12 +56,41 @@ afterEach(() => {
   closeDatabase();
   delete process.env.DURABLE_BACKUP_DIRS;
   disableFactorySeed();
+  restoreOffHostBackupEnv();
 });
 
 describe("production boot path (initDatabase → seedDatabase)", () => {
-  it("does not factory-seed without ALLOW_FACTORY_SEED and writes snapshot pairs", async () => {
+  it("restores the committed catalog-backup on empty disks without factory-seeding", async () => {
     await withDurableTrio(async ({ localDir, rootDir, homeDir }) => {
       disableFactorySeed();
+      initDatabase();
+      const first = await seedDatabase();
+      assert.equal(first.catalogSeededThisBoot, false);
+      assert.equal(first.offHost.restored, true);
+      assert.ok(listServices().length > 0);
+      assert.equal(listServices().length, DEFAULT_SERVICES.length);
+      assert.equal(catalogMatchesDefaults(listServices()), true);
+
+      const health = getHealthPayload();
+      assert.equal(health.factorySeedDisabled, true);
+      assert.equal(health.catalogEmpty, false);
+      assert.equal(health.catalogSeededThisBoot, false);
+      assert.equal(health.offHostBackupConfigured, true);
+      assert.equal(health.offHostBackupRestoredThisBoot, true);
+      assert.equal(health.hydrateReason, "off-host");
+      assert.ok(Array.isArray(health.replicas));
+
+      for (const dir of [localDir, rootDir, homeDir]) {
+        assert.equal(fs.existsSync(path.join(dir, SNAPSHOT_NAME)), true);
+        assert.equal(fs.existsSync(path.join(dir, SNAPSHOT_BACKUP_NAME)), true);
+      }
+    });
+  });
+
+  it("does not factory-seed without ALLOW_FACTORY_SEED when off-host backup is unavailable", async () => {
+    await withDurableTrio(async ({ localDir, rootDir, homeDir }) => {
+      disableFactorySeed();
+      isolateOffHostBackup();
       initDatabase();
       const first = await seedDatabase();
       assert.equal(first.catalogSeededThisBoot, false);
@@ -84,6 +114,7 @@ describe("production boot path (initDatabase → seedDatabase)", () => {
 
   it("factory-seeds only when ALLOW_FACTORY_SEED=1, then keeps catalog on second boot", async () => {
     await withDurableTrio(async ({ localDir, rootDir, homeDir }) => {
+      isolateOffHostBackup();
       enableFactorySeed();
       initDatabase();
       const first = await seedDatabase();
@@ -114,6 +145,7 @@ describe("production boot path (initDatabase → seedDatabase)", () => {
 
   it("restores custom names from $HOME replica after /local is wiped, without factory seed", async () => {
     await withDurableTrio(async ({ localDir, rootDir, homeDir }) => {
+      isolateOffHostBackup();
       enableFactorySeed();
       initDatabase();
       await seedDatabase();
@@ -168,6 +200,7 @@ describe("production boot path (initDatabase → seedDatabase)", () => {
 
   it("leaves the catalog empty after a total replica wipe and never inserts factory names", async () => {
     await withDurableTrio(async ({ localDir, rootDir, homeDir }) => {
+      isolateOffHostBackup();
       enableFactorySeed();
       initDatabase();
       await seedDatabase();
@@ -198,6 +231,7 @@ describe("production boot path (initDatabase → seedDatabase)", () => {
   it("does not factory-fill when primary is empty but catalogSeeded survives on a backup snapshot", async () => {
     await withDurableTrio(async ({ localDir, homeDir }) => {
       disableFactorySeed();
+      isolateOffHostBackup();
       fs.mkdirSync(homeDir, { recursive: true });
       fs.writeFileSync(
         path.join(homeDir, SNAPSHOT_NAME),
@@ -226,6 +260,7 @@ describe("production boot path (initDatabase → seedDatabase)", () => {
   it("refuses to persist factory DEFAULT_SERVICES over a custom replica snapshot", async () => {
     await withDurableTrio(async ({ localDir, homeDir }) => {
       disableFactorySeed();
+      isolateOffHostBackup();
       const custom = DEFAULT_SERVICES.map((service) =>
         service.id === "canva-pro" ? { ...service, nameEn: "Canva Pro" } : service,
       );

@@ -20,7 +20,7 @@ import {
 } from "../src/db/persist.js";
 import { getHealthPayload } from "../src/health.js";
 import { seedDatabase } from "../src/db/seed.js";
-import { disableFactorySeed, enableFactorySeed } from "./helpers.js";
+import { disableFactorySeed, enableFactorySeed, isolateOffHostBackup, restoreOffHostBackupEnv } from "./helpers.js";
 import {
   deleteService,
   insertService,
@@ -71,10 +71,12 @@ afterEach(() => {
 
 describe("admin catalog persistence", () => {
   before(() => {
+    isolateOffHostBackup();
     enableFactorySeed();
   });
   after(() => {
     disableFactorySeed();
+    restoreOffHostBackupEnv();
   });
 
   it("seeds the default catalog once and keeps admin edits after a second seedDatabase()", async () => {

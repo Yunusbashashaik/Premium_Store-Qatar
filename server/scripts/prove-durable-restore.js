@@ -44,11 +44,9 @@ try {
   initDatabase();
   const emptyBoot = await seedDatabase();
   assert.equal(emptyBoot.catalogSeededThisBoot, false, "production must not factory-seed");
-  assert.equal(listServices().length, 0);
-  const factoryNames = new Set(DEFAULT_SERVICES.map((s) => s.nameEn));
-  for (const service of listServices()) {
-    assert.equal(factoryNames.has(service.nameEn), false);
-  }
+  assert.equal(emptyBoot.offHost.restored, true, "empty local should hydrate catalog-backup");
+  assert.ok(listServices().length > 0);
+  assert.equal(listServices().length, DEFAULT_SERVICES.length);
 
   process.env.ALLOW_FACTORY_SEED = "1";
   closeDatabase();

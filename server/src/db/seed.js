@@ -128,7 +128,7 @@ export async function seedDatabase() {
   if (countServices() === 0) {
     offHost = await restoreOffHostBackupToDirs(getSnapshotWriteDirs());
     if (offHost.restored) {
-      hydrated = hydratePersistedAdminState();
+      hydrated = hydratePersistedAdminState({ allowFactorySnapshot: true });
       hydrated = {
         ...hydrated,
         reason: hydrated.restored ? "off-host" : hydrated.reason,

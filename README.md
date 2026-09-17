@@ -47,16 +47,20 @@ Default data directory is **`~/premium-store-qatar-data/`** (outside the applica
 
 ### Off-host catalog backup (required on GoDaddy)
 
-Every admin persist also copies `catalog-backup/admin-state.json` to GitHub via the Contents API. On boot, if the local catalog is empty, the API **auto-fetches** that file and hydrates **before** any seed.
+Every admin persist also copies `catalog-backup/admin-state.json` to GitHub via the Contents API **when a write token is set**. On boot, if the local catalog is empty, the API **auto-fetches** that file and hydrates **before** any seed. **Read restore does not need a token.** If `CATALOG_BACKUP_URL` is unset, the API defaults to:
 
-Set these in Application Manager:
+`https://raw.githubusercontent.com/Yunusbashashaik/Premium_Store-Qatar/main/catalog-backup/admin-state.json`
 
-- `CATALOG_BACKUP_TOKEN` **or** `GH_TOKEN` **or** `GITHUB_TOKEN` (repo `contents:write`)
+It also hydrates from the `catalog-backup/admin-state.json` file shipped in the deploy tree when GitHub is unreachable.
+
+Set these in Application Manager for **write** (admin save → GitHub):
+
+- `CATALOG_BACKUP_TOKEN` **or** `GH_TOKEN` **or** `GITHUB_TOKEN` (repo `contents:write`) — required only to push backups, not to restore
 - `CATALOG_BACKUP_ENABLED=1` — required when using `GH_TOKEN` / `GITHUB_TOKEN` (not needed if `CATALOG_BACKUP_TOKEN` is set)
 - `CATALOG_BACKUP_REPO` — `owner/name` (default `Yunusbashashaik/Premium_Store-Qatar`)
 - `CATALOG_BACKUP_PATH` — default `catalog-backup/admin-state.json`
-- `CATALOG_BACKUP_BRANCH` — optional branch
-- `CATALOG_BACKUP_URL` — optional HTTPS JSON URL used for restore if the Contents API GET misses
+- `CATALOG_BACKUP_BRANCH` — optional branch (default `main` for the public raw URL)
+- `CATALOG_BACKUP_URL` — optional HTTPS JSON URL used for restore instead of the default raw URL
 
 `GET /api/health` includes `factorySeedDisabled`, `catalogEmpty`, `hydrateReason`, `replicas`, `offHostBackupConfigured`, `offHostBackupRestoredThisBoot`, and `offHostBackupSavedAt`.
 
@@ -98,7 +102,7 @@ Admin login needs a **running Node app**. If `https://YOUR-DOMAIN/api/health` do
    - `DATA_DIR` = that volume path (example: `/home/USER/premium-store-qatar-data`)
    - Optional: `DATABASE_PATH` = `$DATA_DIR/globalstore.db`
 9. Republish / restart the application  
-10. Visit `https://YOUR-DOMAIN/api/health` — JSON must include `ok: true`, `factorySeedDisabled: true`, `offHostBackupConfigured: true`  
+10. Visit `https://YOUR-DOMAIN/api/health` — JSON must include `ok: true`, `factorySeedDisabled: true`, `offHostBackupConfigured: true` (true with the default GitHub raw URL even when no token is set)  
 11. Sign in with `admin` / `Go$StQ821`, rename a service, then **Restart Published App**. Confirm `/api/services` still has the new name (`catalogSeededThisBoot` should be `false`; if local files were recycled, `offHostBackupRestoredThisBoot` is `true`).
 
 Do **not** FTP only `client/dist` into `public_html`. That is static hosting and `/api/health` will 404.

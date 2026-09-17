@@ -316,7 +316,7 @@ export function catalogWasInitialized() {
   return false;
 }
 
-export function hydratePersistedAdminState() {
+export function hydratePersistedAdminState(options = {}) {
   if (!source) return { restored: false, reason: "unbound" };
   const snapshot = readAdminSnapshot();
   if (!snapshot) return { restored: false, reason: "no-snapshot", snapshotPath: null };
@@ -324,6 +324,7 @@ export function hydratePersistedAdminState() {
   const currentSettings = source.getAllSettings();
   const snapSettings = snapshot.settings && typeof snapshot.settings === "object" ? snapshot.settings : null;
   const snapServices = Array.isArray(snapshot.services) ? snapshot.services : [];
+  const allowFactorySnapshot = options.allowFactorySnapshot === true;
 
   let restoredServices = false;
   let restoredSettings = false;
@@ -342,6 +343,7 @@ export function hydratePersistedAdminState() {
     } else if (
       catalogMatchesDefaults(snapServices) &&
       !isFactorySeedAllowed() &&
+      !allowFactorySnapshot &&
       (emptyCatalog || currentIsDefault)
     ) {
       reason = "skipped-factory-snapshot";
