@@ -2,8 +2,10 @@ import { Router } from "express";
 import {
   createAdminService,
   deleteAdminService,
+  exportAdminState,
   getAdminServices,
   getAdminSettings,
+  importAdminState,
   login,
   me,
   putAdminSettings,
@@ -37,3 +39,5 @@ adminRouter.delete("/services/:id", requireAdmin, deleteAdminService);
 adminRouter.post("/translate", requireAdmin, translateAdmin);
 adminRouter.get("/settings", requireAdmin, getAdminSettings);
 adminRouter.put("/settings", requireAdmin, putAdminSettings);
+adminRouter.get("/state", requireAdmin, exportAdminState);
+adminRouter.post("/state", requireAdmin, importAdminState);

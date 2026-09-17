@@ -3,7 +3,14 @@ import path from "path";
 
 export const DEFAULT_DURABLE_DIRNAME = "premium-store-qatar-data";
 export const SNAPSHOT_NAME = "admin-state.json";
-export const STORE_NAMES = ["globalstore.db", "globalstore.json", SNAPSHOT_NAME];
+export const SNAPSHOT_BACKUP_NAME = "admin-state.backup.json";
+export const SNAPSHOT_FILES = [SNAPSHOT_NAME, SNAPSHOT_BACKUP_NAME];
+export const STORE_NAMES = [
+  "globalstore.db",
+  "globalstore.json",
+  SNAPSHOT_NAME,
+  SNAPSHOT_BACKUP_NAME,
+];
 
 function uniqueResolved(dirs) {
   const seen = new Set();

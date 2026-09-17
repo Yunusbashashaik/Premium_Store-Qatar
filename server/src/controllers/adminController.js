@@ -12,6 +12,10 @@ import {
 } from "../models/Service.js";
 import { getAllSettings, updateSettings } from "../models/Settings.js";
 import { SERVICE_UPLOADS_DIR } from "../db/connection.js";
+import {
+  applyImportedAdminState,
+  buildAdminStatePayload,
+} from "../db/persist.js";
 import { serviceImagePublicUrl } from "../middleware/upload.js";
 import { translateEnglishToArabic } from "../services/translate.js";
 
@@ -231,5 +235,31 @@ export function putAdminSettings(req, res) {
   } catch (err) {
     console.error("Settings update failed:", err);
     res.status(400).json({ error: err.message || "Update failed" });
+  }
+}
+
+export function exportAdminState(_req, res) {
+  try {
+    const payload = buildAdminStatePayload();
+    res.setHeader("Content-Disposition", "attachment; filename=\"admin-state.json\"");
+    res.json(payload);
+  } catch (err) {
+    console.error("Admin catalog export failed:", err);
+    res.status(500).json({ error: err.message || "Export failed" });
+  }
+}
+
+export function importAdminState(req, res) {
+  try {
+    const snapshot = req.body || {};
+    const saved = applyImportedAdminState(snapshot);
+    res.json({
+      ok: true,
+      services: Array.isArray(saved?.services) ? saved.services.length : listServices().length,
+      savedAt: saved?.savedAt || null,
+    });
+  } catch (err) {
+    console.error("Admin catalog import failed:", err);
+    res.status(400).json({ error: err.message || "Import failed" });
   }
 }

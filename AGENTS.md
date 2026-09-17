@@ -23,9 +23,7 @@ Vite proxies `/api` to port **3001** during development. For production-style se
 
 ### Catalog (live database)
 
-The storefront list comes from **`GET /api/services`** (SQLite). `client/src/data/servicesCatalog.js` is used **only as a first-time seed** when the durable catalog is empty. Seed/startup never wipes or overwrites existing services.
-
-Site settings, complaints, and the catalog persist under **`~/premium-store-qatar-data/`** by default (outside the app package so GoDaddy Restart Published App does not wipe them). Override with `DATA_DIR` and/or `DATABASE_PATH`. Snapshots replicate to `/local/<dirname>`, `/root/<dirname>`, and `$HOME/<dirname>` when writable. On boot the API restores the best backup (custom catalog over factory defaults) into the active dir, hydrates, and factory-seeds **only on true first boot**. After `catalogSeeded` or a custom snapshot exists, an empty store is **never** filled with `DEFAULT_SERVICES`, and factory/empty snapshots never overwrite a custom `admin-state.json`. On first boot, existing `server/data` is copied into that durable folder if the target is empty.
+The storefront list comes from **`GET /api/services`** (SQLite). `client/src/data/servicesCatalog.js` is used **only** when `ALLOW_FACTORY_SEED=1` and the durable catalog is empty. Production must not set that flag: boot restores local replicas (`admin-state.json` + `admin-state.backup.json` under `/local`, `/root`, `$HOME`) then auto-fetches the off-host GitHub/`CATALOG_BACKUP_URL` backup and hydrates **before** any seed. An empty store after restore stays empty and never factory-fills. Factory/empty snapshots never overwrite a custom `admin-state.json`. On first boot, existing `server/data` is copied into the durable folder if the target is empty.
 
 ### Complaint email
 
@@ -33,9 +31,9 @@ Local dev works without SMTP: submissions are stored in SQLite (and appended to 
 
 ### Admin panel
 
-Click the header Admin icon to open a **modal** (no separate `/admin` page). After login, the dashboard offers **Add Services**, **Edit Services**, **Complaint Email**, **Contact Details**, and **About Us**. Configure `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and optionally `ADMIN_SESSION_SECRET`. Session token is stored in `localStorage` key `globalstores_admin_token`.
+Click the header Admin icon to open a **modal** (no separate `/admin` page). After login, the dashboard offers **Add Services**, **Edit Services**, **Complaint Email**, **Contact Details**, **About Us**, **Export catalog**, and **Import catalog**. Configure `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and optionally `ADMIN_SESSION_SECRET`. Session token is stored in `localStorage` key `globalstores_admin_token`.
 
-**GoDaddy:** Admin requires the Node process (`npm run build && npm start`). Static FTP uploads cannot serve `/api/admin/login` and will show “Load failed”. Verify `GET /api/health` on the live domain (`dataDir`, `services`, `catalogSeededThisBoot`). After deploy, set `DATA_DIR` to a persistent volume if the host provides one (otherwise the process home directory `~/premium-store-qatar-data` is used), republish, then retest an admin rename + Restart Published App. If the API is on another host, set `apiUrl` in `client/public/runtime-config.js`.
+**GoDaddy:** Admin requires the Node process (`npm run build && npm start`). Set `CATALOG_BACKUP_TOKEN` or `CATALOG_BACKUP_ENABLED=1` plus `GITHUB_TOKEN`/`GH_TOKEN`, and `DATA_DIR` if the host provides a volume. Verify `GET /api/health` (`factorySeedDisabled`, `offHostBackupConfigured`, `hydrateReason`, `replicas`). The dashboard **Export catalog** / **Import catalog** downloads and restores `admin-state.json`. If the API is on another host, set `apiUrl` in `client/public/runtime-config.js`.
 
 ### E2E notes
 

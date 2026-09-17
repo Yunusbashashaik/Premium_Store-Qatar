@@ -13,11 +13,16 @@ import {
   settingsSignature,
   snapshotLooksInitialized,
 } from "./catalogFingerprint.js";
+import { isFactorySeedAllowed } from "./factorySeed.js";
+import { queueOffHostSave } from "./offHostBackup.js";
 import {
   extraDurableReplicationEnabled,
   getDurableBackupDirs,
   isEphemeralAppPath,
+  SNAPSHOT_BACKUP_NAME,
+  SNAPSHOT_FILES,
   SNAPSHOT_NAME,
+  STORE_NAMES,
 } from "./durablePaths.js";
 
 export {
@@ -52,25 +57,35 @@ function replicaDirs() {
   return getDurableBackupDirs();
 }
 
-export function getSnapshotWritePaths() {
+export function getSnapshotWriteDirs() {
   const dirs = new Set();
   const storePath = getActiveStorePath();
   if (storePath) dirs.add(path.dirname(path.resolve(storePath)));
   dirs.add(path.resolve(getDataDir()));
   if (process.env.DATA_DIR) dirs.add(path.resolve(process.env.DATA_DIR));
   for (const dir of replicaDirs()) dirs.add(dir);
-  return [...dirs]
-    .filter((dir) => !isEphemeralAppPath(dir))
-    .map((dir) => path.join(dir, SNAPSHOT_NAME));
+  return [...dirs].filter((dir) => !isEphemeralAppPath(dir));
+}
+
+function filesForDirs(dirs) {
+  const paths = [];
+  for (const dir of dirs) {
+    for (const name of SNAPSHOT_FILES) {
+      paths.push(path.join(dir, name));
+    }
+  }
+  return paths;
+}
+
+export function getSnapshotWritePaths() {
+  return filesForDirs(getSnapshotWriteDirs());
 }
 
 export function getSnapshotPaths() {
-  const paths = new Set(getSnapshotWritePaths());
-  paths.add(path.join(path.resolve(LEGACY_APP_DATA_DIR), SNAPSHOT_NAME));
-  for (const dir of replicaDirs()) {
-    paths.add(path.join(dir, SNAPSHOT_NAME));
-  }
-  return [...paths];
+  const dirs = new Set(getSnapshotWriteDirs());
+  dirs.add(path.resolve(LEGACY_APP_DATA_DIR));
+  for (const dir of replicaDirs()) dirs.add(dir);
+  return filesForDirs([...dirs].filter((dir) => !isEphemeralAppPath(dir)));
 }
 
 function atomicWrite(filePath, data) {
@@ -106,38 +121,75 @@ function existingSnapshotIsCustom(filePath) {
   }
 }
 
-function shouldRefuseSnapshotOverwrite(filePath, incomingServices) {
-  if (!existingSnapshotIsCustom(filePath)) return false;
+function incomingIsFactoryOrEmpty(incomingServices) {
   if (!Array.isArray(incomingServices) || incomingServices.length === 0) return true;
   return catalogMatchesDefaults(incomingServices);
 }
 
-export function writeAdminSnapshot(state) {
-  if (!state) return null;
-  const payload = {
+function shouldRefuseSnapshotOverwrite(filePath, incomingServices) {
+  if (!existingSnapshotIsCustom(filePath)) return false;
+  return incomingIsFactoryOrEmpty(incomingServices);
+}
+
+function dirHasCustomSnapshot(dir) {
+  return SNAPSHOT_FILES.some((name) =>
+    existingSnapshotIsCustom(path.join(dir, name)),
+  );
+}
+
+export function buildAdminStatePayload(state = null) {
+  const services = Array.isArray(state?.services) ? state.services : serializeServices();
+  const settings =
+    state?.settings && typeof state.settings === "object"
+      ? state.settings
+      : {
+          ...(source?.getAllSettings?.() || {}),
+          catalogSeeded:
+            source?.getSetting?.("catalogSeeded") === true ||
+            (source?.countServices?.() || 0) > 0,
+        };
+  return {
     version: 1,
     generation: CATALOG_GENERATION,
-    savedAt: new Date().toISOString(),
-    services: Array.isArray(state.services) ? state.services : [],
-    settings: state.settings && typeof state.settings === "object" ? state.settings : {},
+    savedAt: state?.savedAt || new Date().toISOString(),
+    services,
+    settings,
   };
+}
+
+export function writeAdminSnapshot(state, { force = false } = {}) {
+  if (!state) return null;
+  const payload = buildAdminStatePayload(state);
   const body = `${JSON.stringify(payload, null, 2)}\n`;
   const written = [];
   const skipped = [];
-  for (const filePath of getSnapshotWritePaths()) {
-    try {
-      if (shouldRefuseSnapshotOverwrite(filePath, payload.services)) {
-        console.error(
-          "Refusing to overwrite custom admin snapshot with factory/empty catalog",
-          filePath,
-        );
-        skipped.push(filePath);
-        continue;
+  for (const dir of getSnapshotWriteDirs()) {
+    const refuse =
+      !force && dirHasCustomSnapshot(dir) && incomingIsFactoryOrEmpty(payload.services);
+    if (refuse) {
+      console.error(
+        "Refusing to overwrite custom admin snapshot with factory/empty catalog",
+        dir,
+      );
+      skipped.push(path.join(dir, SNAPSHOT_NAME), path.join(dir, SNAPSHOT_BACKUP_NAME));
+      continue;
+    }
+    for (const name of SNAPSHOT_FILES) {
+      const filePath = path.join(dir, name);
+      try {
+        if (!force && shouldRefuseSnapshotOverwrite(filePath, payload.services)) {
+          console.error(
+            "Refusing to overwrite custom admin snapshot with factory/empty catalog",
+            filePath,
+          );
+          skipped.push(filePath);
+          continue;
+        }
+        atomicWrite(filePath, body);
+        written.push(filePath);
+      } catch (err) {
+        console.error("Failed to write admin snapshot", filePath, err?.message || err);
       }
-      atomicWrite(filePath, body);
-      written.push(filePath);
-    } catch (err) {
-      console.error("Failed to write admin snapshot", filePath, err?.message || err);
     }
   }
   lastSnapshotChoice = {
@@ -148,23 +200,50 @@ export function writeAdminSnapshot(state) {
   return payload;
 }
 
+function enqueueOffHostSave(payload) {
+  queueOffHostSave(payload);
+}
+
 export function persistAdminState() {
   if (persistDisabled || !source) return null;
   try {
     const catalogSeeded =
       source.getSetting?.("catalogSeeded") === true ||
       (source.countServices?.() || 0) > 0;
-    return writeAdminSnapshot({
+    const payload = writeAdminSnapshot({
       services: serializeServices(),
       settings: {
         ...source.getAllSettings(),
         catalogSeeded,
       },
     });
+    if (payload) enqueueOffHostSave(payload);
+    return payload;
   } catch (err) {
     console.error("Failed to persist admin state", err?.message || err);
     return null;
   }
+}
+
+export function applyImportedAdminState(snapshot) {
+  if (!source) throw new Error("Database not initialized");
+  if (!snapshot || typeof snapshot !== "object") {
+    throw new Error("Invalid admin-state.json");
+  }
+  const services = Array.isArray(snapshot.services) ? snapshot.services : null;
+  if (!services) {
+    throw new Error("admin-state.json must include a services array");
+  }
+  withoutPersist(() => {
+    source.replaceAllServices(services);
+    if (snapshot.settings && typeof snapshot.settings === "object") {
+      source.replaceAllSettings({
+        ...snapshot.settings,
+        catalogSeeded: true,
+      });
+    }
+  });
+  return persistAdminState();
 }
 
 function readSnapshotFile(filePath) {
@@ -261,6 +340,12 @@ export function hydratePersistedAdminState() {
     if (snapServices.length === 0) {
       reason = "skipped-snapshot-empty";
     } else if (
+      catalogMatchesDefaults(snapServices) &&
+      !isFactorySeedAllowed() &&
+      (emptyCatalog || currentIsDefault)
+    ) {
+      reason = "skipped-factory-snapshot";
+    } else if (
       emptyCatalog ||
       (currentIsDefault && snapshotDiffers && snapshotCanReplaceDefaults)
     ) {
@@ -303,6 +388,15 @@ export function hydratePersistedAdminState() {
   };
 }
 
+export function getReplicaStatus() {
+  return getSnapshotWriteDirs().map((dir) => ({
+    dir,
+    adminState: fs.existsSync(path.join(dir, SNAPSHOT_NAME)),
+    adminStateBackup: fs.existsSync(path.join(dir, SNAPSHOT_BACKUP_NAME)),
+    store: STORE_NAMES.some((name) => fs.existsSync(path.join(dir, name))),
+  }));
+}
+
 export function getPersistStatus() {
   const snapshot = readAdminSnapshot();
   return {
@@ -316,5 +410,6 @@ export function getPersistStatus() {
     lastWritePaths: lastSnapshotChoice.lastWritePaths || [],
     lastSkippedPaths: lastSnapshotChoice.lastSkippedPaths || [],
     backupDirs: extraDurableReplicationEnabled(getDataDir()) ? getDurableBackupDirs() : [],
+    replicas: getReplicaStatus(),
   };
 }

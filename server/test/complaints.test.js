@@ -19,9 +19,10 @@ const testDir = fs.mkdtempSync(path.join(os.tmpdir(), "gs-complaints-"));
 describe("complaints API", () => {
   let app;
 
-  before(() => {
+  before(async () => {
+    process.env.ALLOW_FACTORY_SEED = "1";
     initDatabase(path.join(testDir, "test.db"));
-    seedDatabase();
+    await seedDatabase();
     app = express();
     app.use("/api/complaints", complaintRouter);
   });

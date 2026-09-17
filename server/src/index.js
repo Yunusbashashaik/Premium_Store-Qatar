@@ -15,12 +15,12 @@ const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
 
 initDatabase();
-seedDatabase();
+export const catalogReady = seedDatabase();
 
 const app = express();
 app.set("trust proxy", 1);
 app.use(cors({ origin: true }));
-app.use(express.json());
+app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get("/api/health", (_req, res) => {
@@ -54,15 +54,23 @@ export function startServer() {
 
   if (passengerGlobal) {
     globalThis.PhusionPassenger.configure({ autoInstall: false });
-    app.listen("passenger");
-    console.log("Premium Store API listening via Phusion Passenger");
+    catalogReady.catch((err) => {
+      console.error("Catalog boot failed", err);
+    }).then(() => {
+      app.listen("passenger");
+      console.log("Premium Store API listening via Phusion Passenger");
+    });
     return;
   }
 
-  app.listen(PORT, HOST, () => {
-    console.log(
-      `Premium Store API listening on http://${HOST}:${PORT}${passengerEnv ? " (Passenger env)" : ""}`,
-    );
+  catalogReady.catch((err) => {
+    console.error("Catalog boot failed", err);
+  }).then(() => {
+    app.listen(PORT, HOST, () => {
+      console.log(
+        `Premium Store API listening on http://${HOST}:${PORT}${passengerEnv ? " (Passenger env)" : ""}`,
+      );
+    });
   });
 }
 

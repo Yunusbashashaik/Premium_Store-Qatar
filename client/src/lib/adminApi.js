@@ -280,6 +280,18 @@ export async function adminTranslate(token, text) {
   return data.text;
 }
 
+export async function adminExportState(token) {
+  return requestJson("/api/admin/state", { token });
+}
+
+export async function adminImportState(token, snapshot) {
+  return requestJson("/api/admin/state", {
+    method: "POST",
+    token,
+    body: snapshot,
+  });
+}
+
 const LIVE_SETTINGS_KEY = "gs_live_settings";
 const LIVE_SERVICES_KEY = "gs_live_services_v4";
 

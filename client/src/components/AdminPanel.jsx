@@ -3,8 +3,10 @@ import GlassModal from "./GlassModal.jsx";
 import {
   adminCreateService,
   adminDeleteService,
+  adminExportState,
   adminFetchServices,
   adminFetchSettings,
+  adminImportState,
   adminLogin,
   adminSaveService,
   adminSaveSettings,
@@ -126,6 +128,7 @@ export default function AdminPanel({ open, onClose, t }) {
   const [confirmContact, setConfirmContact] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const importInputRef = useRef(null);
   const cacheRef = useRef({ services: null, settings: null });
   const toastTimer = useRef(null);
 
@@ -469,6 +472,53 @@ export default function AdminPanel({ open, onClose, t }) {
     }
   };
 
+  const onExportCatalog = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const payload = await adminExportState(token);
+      const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "admin-state.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onImportCatalogFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      const text = await file.text();
+      const snapshot = JSON.parse(text);
+      if (!snapshot || !Array.isArray(snapshot.services)) {
+        throw new Error(t.adminImportInvalid);
+      }
+      await adminImportState(token, snapshot);
+      cacheRef.current.services = null;
+      cacheRef.current.settings = null;
+      const { list, settings } = await prefetch(token);
+      notifyServicesUpdated(list);
+      setSettingsDraft(toSettingsDraft(settings));
+      showToast(t.adminImported);
+    } catch (err) {
+      setError(err.message || t.adminImportInvalid);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const persistEmail = async () => {
     setBusy(true);
     setError("");
@@ -650,6 +700,29 @@ export default function AdminPanel({ open, onClose, t }) {
                   <button type="button" className="btn btn-primary admin-dash-card" onClick={openEditMenu}>
                     {t.adminEditServicesBtn}
                   </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost admin-dash-card"
+                    onClick={onExportCatalog}
+                    disabled={busy}
+                  >
+                    {t.adminExportCatalog}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost admin-dash-card"
+                    onClick={() => importInputRef.current?.click()}
+                    disabled={busy}
+                  >
+                    {t.adminImportCatalog}
+                  </button>
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    hidden
+                    onChange={onImportCatalogFile}
+                  />
                 </div>
                 {error ? <p className="error-text">{error}</p> : null}
               </div>
