@@ -30,19 +30,35 @@ npm start   # serves built client + API on port 3001
 
 ### Live catalog (SQLite)
 
-The public subscription list is served from **`GET /api/services`**. On first start only, `client/src/data/servicesCatalog.js` is inserted if the **durable** catalog is empty. Later Node / Passenger restarts **do not** overwrite prices, names, descriptions, images, or admin-added services.
+The public subscription list is served from **`GET /api/services`**. Factory `DEFAULT_SERVICES` are inserted **only** when `ALLOW_FACTORY_SEED=1` (local `npm run dev`). Production leaves this unset: an empty store stays empty until Admin adds services, imports `admin-state.json`, or boot auto-restores the off-host backup. Admin edits, Eid/Special offers, and images persist in SQLite plus `admin-state.json` / `admin-state.backup.json` replicas.
 
 Artwork for the seed catalog lives in **`client/public/services/`**. Admin uploads are stored in SQLite (`image_blob`) and `uploads/services/` under the durable data directory.
 
-To change the live catalog: sign in to Admin → **Add Services** / **Edit Services**.
+To change the live catalog: sign in to Admin → **Add Services** / **Edit Services**, or **Export catalog** / **Import catalog** (`admin-state.json`).
 
 Default data directory is **`~/premium-store-qatar-data/`** (outside the application package). Optional env:
 
-- `DATA_DIR` — persistent folder for SQLite, `admin-state.json`, and uploads (recommended on GoDaddy)
+- `DATA_DIR` — persistent folder for SQLite, `admin-state.json`, and uploads
 - `DATABASE_PATH` — custom SQLite file path
 - `ADMIN_USERNAME` (default: `admin`)
 - `ADMIN_PASSWORD` (default: `Go$StQ821`)
 - `ADMIN_SESSION_SECRET` — signs admin session tokens
+- `ALLOW_FACTORY_SEED=1` — **dev only**; never set this on GoDaddy production
+
+### Off-host catalog backup (required on GoDaddy)
+
+Every admin persist also copies `catalog-backup/admin-state.json` to GitHub via the Contents API. On boot, if the local catalog is empty, the API **auto-fetches** that file and hydrates **before** any seed.
+
+Set these in Application Manager:
+
+- `CATALOG_BACKUP_TOKEN` **or** `GH_TOKEN` **or** `GITHUB_TOKEN` (repo `contents:write`)
+- `CATALOG_BACKUP_ENABLED=1` — required when using `GH_TOKEN` / `GITHUB_TOKEN` (not needed if `CATALOG_BACKUP_TOKEN` is set)
+- `CATALOG_BACKUP_REPO` — `owner/name` (default `Yunusbashashaik/Premium_Store-Qatar`)
+- `CATALOG_BACKUP_PATH` — default `catalog-backup/admin-state.json`
+- `CATALOG_BACKUP_BRANCH` — optional branch
+- `CATALOG_BACKUP_URL` — optional HTTPS JSON URL used for restore if the Contents API GET misses
+
+`GET /api/health` includes `factorySeedDisabled`, `catalogEmpty`, `hydrateReason`, `replicas`, `offHostBackupConfigured`, `offHostBackupRestoredThisBoot`, and `offHostBackupSavedAt`.
 
 ### Admin panel
 
@@ -53,6 +69,7 @@ Click the **Admin** icon in the header. After login the dashboard includes:
 - **Complaint Email ID**
 - **Contact Details** (WhatsApp)
 - **About Us** / social links
+- **Export catalog** / **Import catalog** (`admin-state.json`)
 
 Default credentials: `admin` / `Go$StQ821` (override with `ADMIN_USERNAME` / `ADMIN_PASSWORD`).
 
@@ -81,8 +98,8 @@ Admin login needs a **running Node app**. If `https://YOUR-DOMAIN/api/health` do
    - `DATA_DIR` = that volume path (example: `/home/USER/premium-store-qatar-data`)
    - Optional: `DATABASE_PATH` = `$DATA_DIR/globalstore.db`
 9. Republish / restart the application  
-10. Visit `https://YOUR-DOMAIN/api/health` — JSON must include `ok: true`, `dataDir` outside the app folder, and `catalogSeededThisBoot`  
-11. Sign in with `admin` / `Go$StQ821`, rename a service, then **Restart Published App**. Confirm `/api/services` still has the new name (`catalogSeededThisBoot` should be `false`).
+10. Visit `https://YOUR-DOMAIN/api/health` — JSON must include `ok: true`, `factorySeedDisabled: true`, `offHostBackupConfigured: true`  
+11. Sign in with `admin` / `Go$StQ821`, rename a service, then **Restart Published App**. Confirm `/api/services` still has the new name (`catalogSeededThisBoot` should be `false`; if local files were recycled, `offHostBackupRestoredThisBoot` is `true`).
 
 Do **not** FTP only `client/dist` into `public_html`. That is static hosting and `/api/health` will 404.
 

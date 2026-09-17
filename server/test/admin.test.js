@@ -23,8 +23,9 @@ describe("services + admin API", () => {
   let streamId;
 
   before(async () => {
+    process.env.ALLOW_FACTORY_SEED = "1";
     initDatabase(path.join(testDir, "test.db"));
-    seedDatabase();
+    await seedDatabase();
     app = express();
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
@@ -81,7 +82,7 @@ describe("services + admin API", () => {
       .send({ prices: { month: 44, year: 440 }, nameEn: "Patched Stream" });
     assert.equal(patch.status, 200);
 
-    seedDatabase();
+    await seedDatabase();
 
     const listed = await request(app).get("/api/services");
     const survivor = listed.body.services.find((s) => s.id === survivorId);
@@ -343,5 +344,44 @@ describe("services + admin API", () => {
       adminList.body.services.some((s) => s.nameEn === "Expired Eid"),
       true,
     );
+  });
+
+  it("exports and imports admin-state.json including offers", async () => {
+    const exported = await request(app)
+      .get("/api/admin/state")
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(exported.status, 200);
+    assert.ok(Array.isArray(exported.body.services));
+    assert.ok(exported.body.services.some((s) => s.id === streamId));
+
+    const snapshot = {
+      version: 1,
+      generation: 5,
+      savedAt: new Date().toISOString(),
+      services: [
+        {
+          id: "imported-special",
+          nameEn: "Imported Special",
+          nameAr: "مستورد",
+          descriptionEn: "EN",
+          descriptionAr: "AR",
+          prices: { month: 5, year: 40 },
+          offerType: "special",
+          offerExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      ],
+      settings: { catalogSeeded: true, complaintEmail: "import@example.com" },
+    };
+    const imported = await request(app)
+      .post("/api/admin/state")
+      .set("Authorization", `Bearer ${token}`)
+      .send(snapshot);
+    assert.equal(imported.status, 200);
+    assert.equal(imported.body.ok, true);
+
+    const listed = await request(app).get("/api/services");
+    assert.equal(listed.body.services.length, 1);
+    assert.equal(listed.body.services[0].nameEn, "Imported Special");
+    assert.equal(listed.body.services[0].offerType, "special");
   });
 });

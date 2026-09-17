@@ -12,6 +12,7 @@ import {
   DEFAULT_DURABLE_DIRNAME,
   extraDurableReplicationEnabled,
   getDurableBackupDirs,
+  SNAPSHOT_FILES,
   SNAPSHOT_NAME,
   STORE_NAMES,
 } from "./durablePaths.js";
@@ -104,13 +105,31 @@ export function getLastRecovery() {
 }
 
 function readSnapshotFromDir(dir) {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(path.join(dir, SNAPSHOT_NAME), "utf8"));
-    if (!parsed || typeof parsed !== "object") return null;
-    return parsed;
-  } catch {
-    return null;
+  let best = null;
+  let bestScore = -1;
+  let bestMtime = 0;
+  for (const name of SNAPSHOT_FILES) {
+    const filePath = path.join(dir, name);
+    try {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (!parsed || typeof parsed !== "object") continue;
+      let mtimeMs = 0;
+      try {
+        mtimeMs = fs.statSync(filePath).mtimeMs;
+      } catch {
+        /* ignore */
+      }
+      const rank = rankSnapshot(parsed, mtimeMs);
+      if (!best || rank.score > bestScore) {
+        best = parsed;
+        bestScore = rank.score;
+        bestMtime = mtimeMs;
+      }
+    } catch {
+      /* missing or unreadable */
+    }
   }
+  return { snapshot: best, mtimeMs: bestMtime };
 }
 
 function readStoreServices(dir) {
@@ -150,13 +169,7 @@ function readStoreServices(dir) {
 export function inspectDurableDir(dir) {
   if (!dir || !fs.existsSync(dir)) return null;
   const resolved = path.resolve(dir);
-  const snapshot = readSnapshotFromDir(resolved);
-  let snapshotMtime = 0;
-  try {
-    snapshotMtime = fs.statSync(path.join(resolved, SNAPSHOT_NAME)).mtimeMs;
-  } catch {
-    /* missing snapshot */
-  }
+  const { snapshot, mtimeMs: snapshotMtime } = readSnapshotFromDir(resolved);
   const hasStore = storeArtifactsPresent(resolved);
   let storeMtime = 0;
   for (const name of STORE_NAMES) {
