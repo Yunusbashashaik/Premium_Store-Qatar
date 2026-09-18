@@ -14,8 +14,9 @@ import {
 } from "../src/db/adminCatalog.js";
 import { seedDatabase } from "../src/db/seed.js";
 import { getHealthPayload } from "../src/health.js";
-import { insertService, listServices, updateService } from "../src/models/Service.js";
+import { getServiceImageBlob, insertService, listServices, updateService } from "../src/models/Service.js";
 import { adminRouter } from "../src/routes/admin.js";
+import { servicesRouter } from "../src/routes/services.js";
 import {
   disableFactorySeed,
   isolateOffHostBackup,
@@ -155,49 +156,57 @@ describe("apply-from-admin-catalog", () => {
     assert.equal(listServices().find((s) => s.id === "netflix-full").prices.year, 800);
   });
 
-  it("inserts a new service from admin-catalog and keeps extra live rows", async () => {
+  it("creates a brand-new service from a new admin-catalog row and unique image", async () => {
     const dir = tempDir();
+    writeFixture(dir, sample);
     enableFixtureCatalog(dir);
     disableFactorySeed();
     process.env.DATA_DIR = dir;
     initDatabase(path.join(dir, "store.db"));
     await seedDatabase();
     insertService({
-      id: "netflix-full",
-      nameEn: "Netflix Full",
-      nameAr: "نتفليكس كامل",
-      prices: { month: 60, year: 700 },
-    });
-    insertService({
       id: "panel-only-service",
       nameEn: "Panel Only",
       nameAr: "لوحة فقط",
       prices: { month: 5, year: 40 },
     });
+    assert.equal(listServices().some((s) => s.id === "starplus-premium"), false);
 
-    const result = applyAdminCatalogToStore({
-      services: [
-        { ...sample[0] },
-        {
-          id: "claude-ai",
-          nameEn: "Claude AI",
-          nameAr: "كلود",
-          descriptionEn: "New row",
-          descriptionAr: "جديد",
-          typeEn: "AI",
-          typeAr: "ذكاء",
-          prices: { month: 70, year: 840 },
-          sortOrder: 3,
-          image: "claude-ai.jpg",
-        },
-      ],
-    });
-    assert.equal(result.applied, true);
-    assert.deepEqual(result.added, ["claude-ai"]);
-    const ids = listServices().map((s) => s.id).sort();
-    assert.deepEqual(ids, ["claude-ai", "netflix-full", "panel-only-service"].sort());
-    assert.equal(listServices().find((s) => s.id === "claude-ai").prices.month, 70);
+    const brandNew = {
+      id: "starplus-premium",
+      nameEn: "Star+ Premium",
+      nameAr: "ستار بلس بريميوم",
+      descriptionEn: "Brand new catalog row",
+      descriptionAr: "صف جديد",
+      typeEn: "Shared",
+      typeAr: "مشترك",
+      prices: { month: 15, year: 120 },
+      outOfStock: false,
+      sortOrder: 43,
+      image: "starplus-premium.jpg",
+    };
+    writeFixture(dir, [...sample, brandNew]);
+    const synced = await syncAdminCatalog({ skipRemoteImages: true });
+    assert.equal(synced.applied, true);
+    assert.deepEqual(synced.added, ["starplus-premium"]);
+
+    const created = listServices().find((s) => s.id === "starplus-premium");
+    assert.ok(created, "new admin-catalog id must be inserted on the live store");
+    assert.equal(created.nameEn, "Star+ Premium");
+    assert.equal(created.nameAr, "ستار بلس بريميوم");
+    assert.equal(created.prices.month, 15);
+    assert.equal(created.prices.year, 120);
+    assert.equal(created.imageUrl, "/api/uploads/services/starplus-premium.jpg");
+    assert.equal(Buffer.compare(getServiceImageBlob("starplus-premium"), jpeg), 0);
     assert.equal(listServices().find((s) => s.id === "panel-only-service").nameEn, "Panel Only");
+
+    const app = express();
+    app.use("/api/services", servicesRouter);
+    const publicList = await request(app).get("/api/services");
+    assert.equal(publicList.status, 200);
+    const publicRow = publicList.body.services.find((s) => s.id === "starplus-premium");
+    assert.equal(publicRow.nameEn, "Star+ Premium");
+    assert.equal(publicRow.prices.month, 15);
   });
 
   it("syncs from a packaged admin-catalog dir on demand", async () => {
