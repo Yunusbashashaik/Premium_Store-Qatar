@@ -25,6 +25,8 @@ Vite proxies `/api` to port **3001** during development. For production-style se
 
 The storefront list comes from **`GET /api/services`** (SQLite). `client/src/data/servicesCatalog.js` is used **only** when `ALLOW_FACTORY_SEED=1` and the durable catalog is empty. Production must not set that flag: boot restores local replicas (`admin-state.json` + `admin-state.backup.json` under `/local`, `/root`, `$HOME`) then auto-fetches the off-host GitHub/`CATALOG_BACKUP_URL` backup (default public raw URL, no token required for read) and hydrates **before** any seed. An empty store after restore stays empty and never factory-fills. Factory/empty snapshots never overwrite a custom `admin-state.json`. On first boot, existing `server/data` is copied into the durable folder if the target is empty.
 
+The live Qatar catalog also **pulls** `admin-catalog/` from this repo (raw/Contents, packaged fallback) on boot, on a 5-minute interval, and via Admin **Sync GitHub catalog**. That folder is the human source of truth for prices/images/new services. Pull-only: admin-panel edits are not pushed to GitHub.
+
 ### Complaint email
 
 Local dev works without SMTP: submissions are stored in SQLite (and appended to `complaints.jsonl` in the durable data directory) and screenshots land in `uploads/` there. Set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and optional `COMPLAINT_EMAIL`) for real delivery. The active inbox address is also editable in Admin → Edit Services → Complaint Email ID.
@@ -33,7 +35,7 @@ Local dev works without SMTP: submissions are stored in SQLite (and appended to 
 
 Click the header Admin icon to open a **modal** (no separate `/admin` page). After login, the dashboard offers **Add Services**, **Edit Services**, **Complaint Email**, **Contact Details**, **About Us**, **Export catalog**, and **Import catalog**. Configure `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and optionally `ADMIN_SESSION_SECRET`. Session token is stored in `localStorage` key `globalstores_admin_token`.
 
-**GoDaddy:** Admin requires the Node process (`npm run build && npm start`). Read restore uses the public `catalog-backup/admin-state.json` raw URL by default (no token). Set `CATALOG_BACKUP_TOKEN` or `CATALOG_BACKUP_ENABLED=1` plus `GITHUB_TOKEN`/`GH_TOKEN` only for write/push on admin save, and `DATA_DIR` if the host provides a volume. Verify `GET /api/health` (`factorySeedDisabled`, `offHostBackupConfigured`, `hydrateReason`, `replicas`). The dashboard **Export catalog** / **Import catalog** downloads and restores `admin-state.json`. If the API is on another host, set `apiUrl` in `client/public/runtime-config.js`.
+**GoDaddy:** Admin requires the Node process (`npm run build && npm start`). Read restore uses the public `catalog-backup/admin-state.json` raw URL by default (no token). Set `CATALOG_BACKUP_TOKEN` or `CATALOG_BACKUP_ENABLED=1` plus `GITHUB_TOKEN`/`GH_TOKEN` only for write/push on admin save, and `DATA_DIR` if the host provides a volume. Verify `GET /api/health` (`factorySeedDisabled`, `offHostBackupConfigured`, `hydrateReason`, `replicas`, `adminCatalogConfigured`). The dashboard **Export catalog** / **Import catalog** downloads and restores `admin-state.json`. **Sync GitHub catalog** pulls `admin-catalog/`. If the API is on another host, set `apiUrl` in `client/public/runtime-config.js`. After merging `admin-catalog/`, republish/restart the Node app once.
 
 ### E2E notes
 

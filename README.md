@@ -32,9 +32,9 @@ npm start   # serves built client + API on port 3001
 
 The public subscription list is served from **`GET /api/services`**. Factory `DEFAULT_SERVICES` are inserted **only** when `ALLOW_FACTORY_SEED=1` (local `npm run dev`). Production leaves this unset: an empty store stays empty until Admin adds services, imports `admin-state.json`, or boot auto-restores the off-host backup. Admin edits, Eid/Special offers, and images persist in SQLite plus `admin-state.json` / `admin-state.backup.json` replicas.
 
-Artwork for the seed catalog lives in **`client/public/services/`**. Admin uploads are stored in SQLite (`image_blob`) and `uploads/services/` under the durable data directory.
+Artwork for the seed catalog lives in **`client/public/services/`**. Human catalog edits for GoDaddy live in **`admin-catalog/`** (see that folder’s README). Admin uploads are stored in SQLite (`image_blob`) and `uploads/services/` under the durable data directory.
 
-To change the live catalog: sign in to Admin → **Add Services** / **Edit Services**, or **Export catalog** / **Import catalog** (`admin-state.json`).
+To change the live catalog for Qatar production: edit `admin-catalog/services.json` and `admin-catalog/images/`, merge to `main`, then (after the first deploy) wait for the pull interval or click Admin → **Sync GitHub catalog**. The Admin panel **Add / Edit** screens still work locally but are **not** pushed back to this GitHub folder.
 
 Default data directory is **`~/premium-store-qatar-data/`** (outside the application package). Optional env:
 
@@ -62,7 +62,24 @@ Set these in Application Manager for **write** (admin save → GitHub):
 - `CATALOG_BACKUP_BRANCH` — optional branch (default `main` for the public raw URL)
 - `CATALOG_BACKUP_URL` — optional HTTPS JSON URL used for restore instead of the default raw URL
 
-`GET /api/health` includes `factorySeedDisabled`, `catalogEmpty`, `hydrateReason`, `replicas`, `offHostBackupConfigured`, `offHostBackupRestoredThisBoot`, and `offHostBackupSavedAt`.
+`GET /api/health` includes `factorySeedDisabled`, `catalogEmpty`, `hydrateReason`, `replicas`, `offHostBackupConfigured`, `offHostBackupRestoredThisBoot`, `offHostBackupSavedAt`, and `adminCatalogConfigured` / `adminCatalogLastSyncAt`.
+
+### GitHub `admin-catalog/` pull (Qatar live store)
+
+After merge, the Node app pulls `admin-catalog/services.json` + `admin-catalog/images/` from this repo (GitHub raw / Contents API, with the packaged copy as fallback):
+
+- on boot
+- every 5 minutes (`ADMIN_CATALOG_SYNC_MS`, set `0` to disable the timer)
+- immediately from Admin → **Sync GitHub catalog** (`POST /api/admin/catalog/sync`)
+
+This path is **pull-only**. Empty-only off-host restore of `catalog-backup/admin-state.json` is unchanged. Production still must not set `ALLOW_FACTORY_SEED`.
+
+Optional env:
+
+- `ADMIN_CATALOG_DISABLED=1` — skip pull/apply
+- `ADMIN_CATALOG_REPO` / `ADMIN_CATALOG_BRANCH` / `ADMIN_CATALOG_PATH` (defaults match this repo / `main` / `admin-catalog/services.json`)
+- `ADMIN_CATALOG_URL` — override the raw JSON URL
+- `ADMIN_CATALOG_DIR` — local folder root (tests / unpackaged copies)
 
 ### Admin panel
 
@@ -74,6 +91,7 @@ Click the **Admin** icon in the header. After login the dashboard includes:
 - **Contact Details** (WhatsApp)
 - **About Us** / social links
 - **Export catalog** / **Import catalog** (`admin-state.json`)
+- **Sync GitHub catalog** (pull `admin-catalog/` onto the live store)
 
 Default credentials: `admin` / `Go$StQ821` (override with `ADMIN_USERNAME` / `ADMIN_PASSWORD`).
 

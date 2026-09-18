@@ -10,6 +10,7 @@ import {
   adminLogin,
   adminSaveService,
   adminSaveSettings,
+  adminSyncCatalog,
   adminTranslate,
   adminValidateSession,
   notifyServicesUpdated,
@@ -493,6 +494,23 @@ export default function AdminPanel({ open, onClose, t }) {
     }
   };
 
+  const onSyncGithubCatalog = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await adminSyncCatalog(token);
+      cacheRef.current.services = null;
+      const { list, settings } = await prefetch(token);
+      notifyServicesUpdated(list);
+      setSettingsDraft(toSettingsDraft(settings));
+      showToast(t.adminSyncedGithub);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onImportCatalogFile = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -715,6 +733,14 @@ export default function AdminPanel({ open, onClose, t }) {
                     disabled={busy}
                   >
                     {t.adminImportCatalog}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost admin-dash-card"
+                    onClick={onSyncGithubCatalog}
+                    disabled={busy}
+                  >
+                    {t.adminSyncGithubCatalog}
                   </button>
                   <input
                     ref={importInputRef}

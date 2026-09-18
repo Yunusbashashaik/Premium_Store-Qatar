@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -62,12 +62,17 @@ function installGithubMock(initialSnapshot) {
   };
 }
 
+beforeEach(() => {
+  process.env.ADMIN_CATALOG_DISABLED = "1";
+});
+
 afterEach(async () => {
   await flushOffHostBackup();
   closeDatabase();
   setOffHostFetch(null);
   resetOffHostBackupStatus();
   disableFactorySeed();
+  process.env.ADMIN_CATALOG_DISABLED = "1";
   delete process.env.CATALOG_BACKUP_TOKEN;
   delete process.env.CATALOG_BACKUP_URL;
   delete process.env.CATALOG_BACKUP_REPO;
