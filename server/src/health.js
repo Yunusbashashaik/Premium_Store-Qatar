@@ -1,5 +1,6 @@
 import { getActiveStorePath, getDataDir, getDbEngine, getLastMigration, getLastRecovery } from "./db/connection.js";
 import { isFactorySeedAllowed } from "./db/factorySeed.js";
+import { getAdminCatalogStatus } from "./db/adminCatalog.js";
 import { getOffHostBackupStatus } from "./db/offHostBackup.js";
 import { catalogMatchesDefaults, getPersistStatus } from "./db/persist.js";
 import { getLastSeedResult } from "./db/seed.js";
@@ -12,6 +13,7 @@ export function getHealthPayload() {
   const recovery = getLastRecovery();
   const live = listServices();
   const offHost = getOffHostBackupStatus();
+  const adminCatalog = getAdminCatalogStatus();
   const catalogEmpty = countServices() === 0;
   return {
     ok: true,
@@ -41,6 +43,16 @@ export function getHealthPayload() {
     offHostBackupRestoredThisBoot: Boolean(seed.offHost?.restored || offHost.restoredThisBoot),
     offHostBackupSavedAt: offHost.savedAt || seed.offHost?.savedAt || null,
     offHostBackupSource: seed.offHost?.source || offHost.restoredSource || null,
+    adminCatalogConfigured: Boolean(adminCatalog.configured),
+    adminCatalogSource: adminCatalog.lastSource || seed.adminCatalog?.source || null,
+    adminCatalogLastSyncAt: adminCatalog.lastSyncAt || null,
+    adminCatalogLastReason: adminCatalog.lastResult?.reason || seed.adminCatalog?.reason || null,
+    adminCatalogAdded: Array.isArray(adminCatalog.lastResult?.added)
+      ? adminCatalog.lastResult.added.length
+      : seed.adminCatalog?.added?.length || 0,
+    adminCatalogUpdated: Array.isArray(adminCatalog.lastResult?.updated)
+      ? adminCatalog.lastResult.updated.length
+      : seed.adminCatalog?.updated?.length || 0,
     recovery,
     migration: getLastMigration(),
     time: new Date().toISOString(),

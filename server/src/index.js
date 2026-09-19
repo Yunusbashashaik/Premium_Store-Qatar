@@ -3,6 +3,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { getUploadsDir, initDatabase } from "./db/connection.js";
+import { startAdminCatalogSyncLoop } from "./db/adminCatalog.js";
 import { seedDatabase } from "./db/seed.js";
 import { getHealthPayload } from "./health.js";
 import { adminRouter } from "./routes/admin.js";
@@ -54,18 +55,20 @@ export function startServer() {
 
   if (passengerGlobal) {
     globalThis.PhusionPassenger.configure({ autoInstall: false });
-    catalogReady.catch((err) => {
-      console.error("Catalog boot failed", err);
-    }).then(() => {
-      app.listen("passenger");
-      console.log("Premium Store API listening via Phusion Passenger");
-    });
+  catalogReady.catch((err) => {
+    console.error("Catalog boot failed", err);
+  }).then(() => {
+    startAdminCatalogSyncLoop();
+    app.listen("passenger");
+    console.log("Premium Store API listening via Phusion Passenger");
+  });
     return;
   }
 
   catalogReady.catch((err) => {
     console.error("Catalog boot failed", err);
   }).then(() => {
+    startAdminCatalogSyncLoop();
     app.listen(PORT, HOST, () => {
       console.log(
         `Premium Store API listening on http://${HOST}:${PORT}${passengerEnv ? " (Passenger env)" : ""}`,

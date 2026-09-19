@@ -242,6 +242,10 @@ export function updateService(id, patch) {
     outOfStock: outOfStock ? 1 : 0,
     offerType: offer.offerType,
     offerExpiresAt: offer.offerExpiresAt,
+    sortOrder:
+      patch.sortOrder !== undefined && Number.isFinite(Number(patch.sortOrder))
+        ? Number(patch.sortOrder)
+        : current.sortOrder,
   };
 
   getDb()
@@ -262,6 +266,7 @@ export function updateService(id, patch) {
         out_of_stock = @outOfStock,
         offer_type = @offerType,
         offer_expires_at = @offerExpiresAt,
+        sort_order = @sortOrder,
         updated_at = datetime('now')
       WHERE id = @id`,
     )

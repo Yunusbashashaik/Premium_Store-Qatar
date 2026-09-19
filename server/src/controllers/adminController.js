@@ -12,10 +12,8 @@ import {
 } from "../models/Service.js";
 import { getAllSettings, updateSettings } from "../models/Settings.js";
 import { SERVICE_UPLOADS_DIR } from "../db/connection.js";
-import {
-  applyImportedAdminState,
-  buildAdminStatePayload,
-} from "../db/persist.js";
+import { applyImportedAdminState, buildAdminStatePayload } from "../db/persist.js";
+import { syncAdminCatalog } from "../db/adminCatalog.js";
 import { serviceImagePublicUrl } from "../middleware/upload.js";
 import { translateEnglishToArabic } from "../services/translate.js";
 
@@ -261,5 +259,23 @@ export function importAdminState(req, res) {
   } catch (err) {
     console.error("Admin catalog import failed:", err);
     res.status(400).json({ error: err.message || "Import failed" });
+  }
+}
+
+export async function syncAdminCatalogFromGithub(_req, res) {
+  try {
+    const result = await syncAdminCatalog({ forceRemoteImages: true, preferRemote: true });
+    res.json({
+      ok: true,
+      applied: Boolean(result.applied),
+      reason: result.reason || null,
+      added: result.added || [],
+      updated: result.updated || [],
+      unchanged: result.unchanged || [],
+      services: listServices().length,
+    });
+  } catch (err) {
+    console.error("Admin catalog GitHub sync failed:", err);
+    res.status(502).json({ error: err.message || "Sync failed" });
   }
 }

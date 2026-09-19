@@ -40,6 +40,7 @@ try {
   process.env.DATA_DIR = localDir;
   process.env.DURABLE_BACKUP_DIRS = [localDir, rootDir, homeDir].join(path.delimiter);
   delete process.env.ALLOW_FACTORY_SEED;
+  process.env.ADMIN_CATALOG_DISABLED = "1";
 
   initDatabase();
   const emptyBoot = await seedDatabase();
@@ -145,6 +146,7 @@ try {
   setOffHostFetch(null);
   delete process.env.CATALOG_BACKUP_TOKEN;
   delete process.env.CATALOG_BACKUP_REPO;
+  delete process.env.ADMIN_CATALOG_DISABLED;
   if (prevDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = prevDataDir;
   if (prevBackup === undefined) delete process.env.DURABLE_BACKUP_DIRS;

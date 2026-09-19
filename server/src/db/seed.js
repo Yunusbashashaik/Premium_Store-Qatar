@@ -4,6 +4,7 @@ import {
   restoreOffHostBackupToDirs,
   resetOffHostBackupStatus,
 } from "./offHostBackup.js";
+import { resetAdminCatalogStatus, syncAdminCatalog } from "./adminCatalog.js";
 import {
   bindPersist,
   catalogMatchesDefaults,
@@ -50,6 +51,7 @@ let lastSeedResult = {
   seedSkippedReason: null,
   offHost: { restored: false },
   factorySeedDisabled: true,
+  adminCatalog: { applied: false },
 };
 
 export function getLastSeedResult() {
@@ -121,6 +123,7 @@ function persistAfterBoot() {
 
 export async function seedDatabase() {
   resetOffHostBackupStatus();
+  resetAdminCatalogStatus();
   const settingsSeeded = withoutPersist(() => seedSettingsIfEmpty());
   let hydrated = hydratePersistedAdminState();
   let offHost = { restored: false, reason: null };
@@ -139,6 +142,7 @@ export async function seedDatabase() {
 
   const seed = seedDefaultCatalogIfEmpty();
   persistAfterBoot();
+  const adminCatalog = await syncAdminCatalog({ preferRemote: false });
 
   lastSeedResult = {
     servicesSeeded: seed.seeded,
@@ -149,6 +153,7 @@ export async function seedDatabase() {
     seedSkippedReason: seed.seeded ? null : seed.reason,
     offHost,
     factorySeedDisabled: !isFactorySeedAllowed(),
+    adminCatalog,
   };
   return lastSeedResult;
 }

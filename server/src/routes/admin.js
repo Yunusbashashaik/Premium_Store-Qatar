@@ -9,6 +9,7 @@ import {
   login,
   me,
   putAdminSettings,
+  syncAdminCatalogFromGithub,
   translateAdmin,
   updateAdminService,
 } from "../controllers/adminController.js";
@@ -41,3 +42,4 @@ adminRouter.get("/settings", requireAdmin, getAdminSettings);
 adminRouter.put("/settings", requireAdmin, putAdminSettings);
 adminRouter.get("/state", requireAdmin, exportAdminState);
 adminRouter.post("/state", requireAdmin, importAdminState);
+adminRouter.post("/catalog/sync", requireAdmin, syncAdminCatalogFromGithub);
